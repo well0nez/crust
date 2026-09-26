@@ -19,3 +19,5 @@ obj-$(CONFIG_PLATFORM_H3)   += sun8i-h3-ccu.o
 obj-$(CONFIG_PLATFORM_H3)   += sun8i-r-ccu.o
 obj-$(CONFIG_PLATFORM_H6)   += sun50i-h6-ccu.o
 obj-$(CONFIG_PLATFORM_H6)   += sun50i-h6-r-ccu.o
+obj-$(CONFIG_PLATFORM_H713) += sun50i-h713-ccu.o
+obj-$(CONFIG_PLATFORM_H713) += sun50i-h713-r-ccu.o

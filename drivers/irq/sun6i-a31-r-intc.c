@@ -21,7 +21,7 @@
 #define INTC_IRQ_RESP_REG(n) (0x0060 + 4 * (n))
 #define INTC_MUX_EN_REG(n)   (0x00c0 + 4 * (n))
 
-#define NUM_IRQ_REGS         (CONFIG(PLATFORM_H6) ? 2 : 1)
+#define NUM_IRQ_REGS         (CONFIG(PLATFORM_H713) ? 3 : CONFIG(PLATFORM_H6) ? 2 : 1)
 #define NUM_MUX_REGS         4
 
 /* Gating AVCC will prevent receiving any of these interrupts. */

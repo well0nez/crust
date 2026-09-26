@@ -6,6 +6,7 @@
 choice
 	bool "Watchdog timer"
 	default WATCHDOG_SUN9I_A80_TWD if PLATFORM_H6
+	default WATCHDOG_SUN50I_H713_WDT if PLATFORM_H713
 	default WATCHDOG_SUN6I_A31_WDT
 	help
 		The firmware is monitored by a watchdog timer. If an
@@ -13,6 +14,14 @@ choice
 		of allowing it to hang.
 
 		The watchdog also services user-requested system resets.
+
+config WATCHDOG_SUN50I_H713_WDT
+	bool "R_WDOG of the H713 (reset only, never armed)"
+	depends on PLATFORM_H713
+	help
+		sun50iw12 layout with the key 0x16aa. The feed sequence is
+		unknown and the vendor firmware never arms it, so this
+		driver only provides the system reset.
 
 config WATCHDOG_SUN6I_A31_WDT
 	bool "Watchdog (R_WDOG)"

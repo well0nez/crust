@@ -8,3 +8,4 @@ obj-y += dram.o
 obj-$(CONFIG_PLATFORM_A64) += sun8i-h3-dram.o
 obj-$(CONFIG_PLATFORM_H3)  += sun8i-h3-dram.o
 obj-$(CONFIG_PLATFORM_H6)  += sun50i-h6-dram.o
+obj-$(CONFIG_PLATFORM_H713) += sun50i-h713-dram.o

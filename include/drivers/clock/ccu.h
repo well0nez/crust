@@ -23,6 +23,9 @@
 #elif CONFIG(PLATFORM_H6)
 #include <clock/sun50i-h6-ccu.h>
 #include <clock/sun50i-h6-r-ccu.h>
+#elif CONFIG(PLATFORM_H713)
+#include <clock/sun50i-h713-ccu.h>
+#include <clock/sun50i-h713-r-ccu.h>
 #endif
 
 struct ccu {

@@ -1,0 +1,21 @@
+/*
+ * Copyright © 2017-2026 The Crust Firmware Authors.
+ * SPDX-License-Identifier: BSD-3-Clause OR GPL-2.0-only
+ */
+
+#ifndef DRIVERS_CLOCK_SUN50I_H713_CCU_H
+#define DRIVERS_CLOCK_SUN50I_H713_CCU_H
+
+enum {
+	CLK_PLL_DDR0,
+	CLK_PLL_PERIPH0,
+	CLK_APB2,
+	CLK_MBUS,
+	CLK_BUS_MSGBOX,
+	CLK_DRAM,
+	CLK_BUS_DRAM,
+	CLK_BUS_PIO,
+	SUN50I_H713_CCU_CLOCKS
+};
+
+#endif /* DRIVERS_CLOCK_SUN50I_H713_CCU_H */

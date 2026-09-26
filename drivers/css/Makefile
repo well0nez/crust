@@ -12,3 +12,4 @@ obj-$(CONFIG_PLATFORM_A23) += sun6i-a31-css.o
 obj-$(CONFIG_PLATFORM_A64) += sun50i-a64-css.o
 obj-$(CONFIG_PLATFORM_H3)  += sun6i-a31-css.o
 obj-$(CONFIG_PLATFORM_H6)  += sun50i-h6-css.o
+obj-$(CONFIG_PLATFORM_H713) += sun50i-h713-css.o

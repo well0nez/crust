@@ -1,0 +1,43 @@
+#
+# Copyright © 2026 The Crust Firmware Authors.
+# SPDX-License-Identifier: BSD-3-Clause OR GPL-2.0-only
+#
+
+if PLATFORM_H713
+
+config H713_HDMI
+	bool "HDMI front end contract of the vendor ARISC firmware"
+	default y
+	help
+		Speak the message-box protocol of Allwinner's TV303 ARISC
+		firmware on msgbox port 0 (EDID store, hot-plug pin, DDC
+		RAM) and port 3 (startup handshake, cpu op req, restore
+		finished), so that the Linux driver sun50i-h713-arisc
+		keeps working unchanged.
+
+config H713_IR_WAKE_NECX
+	bool "Wake from standby on the projector remote (extended NEC)"
+	depends on CIR
+	default y
+	help
+		Compare received NEC codes against the vendor's cir_param
+		list of the HY310/HY300 Pro (19 address/command pairs).
+
+config H713_POWER_KEY_PIN
+	int "Port L pin of the power key (level, active low)"
+	default 4
+	range 0 31
+	help
+		standby_param power_key = "PL4" on every board seen.
+
+config H713_RAILS_PIN
+	int "Port L pin the vendor standby_param names for all rails, -1 = never drive it"
+	default -1
+	range -1 31
+	help
+		standby_param on the HY310 and HY300 Pro puts vdd-cpu,
+		vdd-sys, vcc-pll and vcc-dram all on PL6. What hangs on it
+		is unmeasured (FB-STANDBY 7.5), so the default never
+		touches the pin.
+
+endif

@@ -29,7 +29,7 @@ watchdog_get(void)
 {
 	const struct device *watchdog = NULL;
 
-	if (CONFIG(WATCHDOG_SUN6I_A31_WDT))
+	if (CONFIG(WATCHDOG_SUN6I_A31_WDT) || CONFIG(WATCHDOG_SUN50I_H713_WDT))
 		watchdog = device_get_or_null(&r_wdog.dev);
 	if (CONFIG(WATCHDOG_SUN9I_A80_TWD))
 		watchdog = device_get_or_null(&r_twd.dev);

@@ -4,4 +4,8 @@
 #
 
 obj-y += msgbox.o
+ifeq ($(CONFIG_PLATFORM_H713),y)
+obj-y += sun50i-h713-msgbox.o
+else
 obj-y += sunxi-msgbox.o
+endif

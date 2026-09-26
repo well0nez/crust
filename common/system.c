@@ -26,6 +26,7 @@
 #include <watchdog.h>
 #include <clock/ccu.h>
 #include <gpio/sunxi-gpio.h>
+#include <hdmi/sun50i-h713-hdmi.h>
 #include <msgbox/sunxi-msgbox.h>
 
 #define NEXT_STATE (system_state + 2)
@@ -116,6 +117,7 @@ system_state_machine(uint32_t exception)
 
 		/* Acquire runtime-only devices. */
 		mailbox = device_get_or_null(&msgbox.dev);
+		h713_init();
 	}
 
 	/*
@@ -143,7 +145,7 @@ system_state_machine(uint32_t exception)
 	 * nothing is listening, and skip sending the SCP_READY message to
 	 * avoid filling up the mailbox.
 	 */
-	if (mailbox && initial_state == SS_BOOT) {
+	if (mailbox && initial_state == SS_BOOT && !CONFIG(H713_HDMI)) {
 		scpi_create_message(mailbox, SCPI_CLIENT_EL3,
 		                    SCPI_CMD_SCP_READY);
 	}
@@ -159,8 +161,9 @@ system_state_machine(uint32_t exception)
 				watchdog_restart(watchdog);
 
 			/* Poll runtime services. */
-			if (mailbox)
+			if (mailbox && !CONFIG(H713_HDMI))
 				scpi_poll(mailbox);
+			h713_poll();
 
 			break;
 		case SS_SHUTDOWN:
@@ -178,6 +181,7 @@ system_state_machine(uint32_t exception)
 			/* Acquire wakeup sources. */
 			cec = cec_get();
 			cir = cir_get();
+			h713_suspend_prepare();
 
 			/* Configure the SoC for minimal power consumption. */
 			record_step(STEP_SUSPEND_DRAM);
@@ -240,7 +244,7 @@ system_state_machine(uint32_t exception)
 			/* Poll wakeup sources. Reset or resume on wakeup. */
 			if ((cec && cec_poll(cec)) ||
 			    (cir && cir_poll(cir)) ||
-			    irq_poll())
+			    (CONFIG(H713_HDMI) ? h713_wake_poll() : irq_poll()))
 				system_state = NEXT_STATE;
 
 			break;
@@ -295,6 +299,7 @@ system_state_machine(uint32_t exception)
 			/* Resume execution on the CSS. */
 			record_step(STEP_RESUME_CSS);
 			css_resume();
+			h713_resume_done();
 
 			record_step(STEP_RESUME_COMPLETE);
 			debug("Resume complete!");

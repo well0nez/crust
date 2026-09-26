@@ -10,6 +10,7 @@ config PLATFORM
 	default "a83t" if PLATFORM_A83T
 	default "h3"   if PLATFORM_H3
 	default "h6"   if PLATFORM_H6
+	default "h713" if PLATFORM_H713
 
 choice
 	prompt "Platform selection"
@@ -54,10 +55,21 @@ config PLATFORM_H6
 	select HAVE_R_RSB
 	select HAVE_R_TWD
 
+config PLATFORM_H713
+	bool "H713 (TV303 projectors)"
+	depends on ARCH_OR1K
+	select HAVE_DCXO
+	select HAVE_R_CIR
+	help
+		Allwinner H713 (sun50iw12): the R domain of the D1
+		generation, an HDMI receiver front end owned by the ARISC.
+		Deep sleep is not ported yet (no DRAM self-refresh).
+
 endchoice
 
 source "a23/Kconfig"
 source "a64/Kconfig"
+source "h713/Kconfig"
 
 config HAVE_DCXO
 	bool

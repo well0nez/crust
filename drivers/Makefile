@@ -10,6 +10,7 @@ obj-y += counter/
 obj-y += css/
 obj-y += dram/
 obj-y += gpio/
+obj-$(CONFIG_H713_HDMI) += hdmi/
 obj-y += irq/
 obj-y += mfd/
 obj-y += msgbox/
