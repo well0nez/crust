@@ -15,8 +15,10 @@
  * Cluster down: what the blob's 0x4b28 does after "cpu op req" (FB-STANDBY
  * excerpt D): C0_PWRON_RESET = 0, bit 0 of CPU_UNK 0..3 cleared (power-on
  * reset of every core), CPU_SYS_RESET = 0, then the clamps.
- * Core up: TF-A's proven sunxi_cpu_on() for the ncat register file, with the
- * warm entry the ARM handed us in ALT_RVBAR (blob 0x4c40/0x4be4).
+ * Core up: the blob's 0x4cc4 (ALT_RVBAR 0x4c40, CPU_SYS_RESET = 1 and
+ * C0_PWRON_RESET = nH_RST at 0x4d14/0x4d1c, then the core-0 ladder
+ * 0x4768/0x4968/0x48cc/0x485c) done with TF-A's proven sunxi_cpu_on()
+ * sequence for the ncat register file.
  */
 static uint32_t warm_entry_lo, warm_entry_hi;
 
@@ -47,7 +49,7 @@ css_resume_css(uint32_t old_state)
 	if (old_state < SCPI_CSS_OFF)
 		return;
 
-	/* Mirror of the way down; the blob's 0xddec/0xe3f4 order is a guess. */
+	/* The blob's wake side 0x4d14/0x4d1c: 0x070004a0 = 1, 0x07000440 = 0x10000. */
 	mmio_write_32(CPU_SYS_RESET_REG, CPU_SYS_RESET);
 	mmio_write_32(C0_PWRON_RESET_REG, C0_PWRON_RESET_REG_nH_RST);
 }
