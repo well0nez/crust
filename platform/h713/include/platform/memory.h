@@ -42,16 +42,18 @@
 #define H713_SHARED_LIMIT SCPI_MEM_BASE
 
 /*
- * Diagnostic words inside the contract page (+0x200..+0x21f), kept across
+ * Diagnostic words inside the contract page (+0x200..+0x23f), kept across
  * firmware restarts; the kernel driver zeroes them before it releases the
  * core and reports them. +0x00 R_CPUCFG little-endian window enable word as
  * found at start (0 = no window was open), +0x04/+0x08 window 0 start/end,
  * +0x0c CPUS_CLK_REG as found at start, +0x10 the tick timer (TTCR) of the
  * last main loop pass, +0x14 number of h713_init() runs, +0x18/+0x1c
- * R_INTC +0x80/+0x88 as found at start.
+ * R_INTC +0x80/+0x88 as found at start, +0x20 frames received from the
+ * display MIPS, +0x24 the first four bytes of the last one, +0x28 frames
+ * from the ARM with a type other than 0, +0x2c..+0x3c reserved.
  */
 #define H713_DIAG_BASE    (H713_SHARED_BASE + 0x200)
-#define H713_DIAG_LIMIT   (H713_SHARED_BASE + 0x220)
+#define H713_DIAG_LIMIT   (H713_SHARED_BASE + 0x240)
 
 #define STACK_SIZE     0x00000400
 

@@ -63,6 +63,9 @@
 #define DIAG_INITS      (H713_DIAG_BASE + 0x14)
 #define DIAG_INTC_80    (H713_DIAG_BASE + 0x18)
 #define DIAG_INTC_88    (H713_DIAG_BASE + 0x1c)
+#define DIAG_MIPS_N     (H713_DIAG_BASE + 0x20)    /* frames from the MIPS */
+#define DIAG_MIPS_LAST  (H713_DIAG_BASE + 0x24)    /* their first 4 bytes */
+#define DIAG_ARM_TYPE   (H713_DIAG_BASE + 0x28)    /* ARM frames with type != 0 */
 #define ST_RUNNING      BIT(0)
 #define ST_HANDSHAKE    BIT(1)
 #define ST_EDID_MODULE  BIT(2)
@@ -77,6 +80,18 @@
 #define EDID_BLOCK      256
 
 /* ---- message box channels (drivers/msgbox/sun50i-h713-msgbox.c) --------- */
+/*
+ * The display MIPS reaches the ARISC through sub-block 1 of the ARISC's own
+ * user (user1, 0x03003500): the pump's receive address is ((port +
+ * 0x00c00d1c) + (ch - 1) * 64) << 2 (blob 0x7e4c), so channel 2 is that
+ * sub-block. Its frames go to the "DispMips" handler 0x1180c -> 0x1242c:
+ * payload[0] 0x16 is PullHotPlug(action payload[2], port payload[1]) (0x12330),
+ * 0x17 is ResetEDIDModule (0x120f0); nothing is answered. Which of the four
+ * ports the MIPS writes is not read out of its firmware, so all four are
+ * polled; only the ARISC reads its own user, nothing else is consumed.
+ */
+#define MIPS_FIFO_STAT(p) (DEV_MSGBOX + 0x400 + 0x100 + 0x60 + 4 * (p))
+#define MIPS_MSG_DATA(p)  (DEV_MSGBOX + 0x400 + 0x100 + 0x70 + 4 * (p))
 #define RX_PORT(p)      (2 * (p))      /* ARM -> ARISC, user1 port p */
 #define TX_CHAN(c)      (2 * (c) + 1)  /* ARISC -> ARM, user0 channel c */
 #define PORT_HDMI       RX_PORT(0)
@@ -126,6 +141,9 @@ static uint32_t hpd_deadline, key_deadline;
 static uint8_t  key_low;
 static uint32_t pl_cfg_saved;
 static const struct device *cir;
+static struct {
+	uint8_t state, len, idx, buf[8];
+} mips[4];
 
 #define PL(pin, m, p) { .dev = &r_pio.dev, .id = SUNXI_GPIO_PIN(0, pin), \
 	.drive = DRIVE_10mA, .mode = m, .pull = p }
@@ -396,6 +414,7 @@ classify(void)
 	uint8_t lo = sh_rd8(SH_RPM_BUF + 0), hi = sh_rd8(SH_RPM_BUF + 1);
 
 	if (pump_type != 0) {
+		mmio_write_32(DIAG_ARM_TYPE, mmio_read_32(DIAG_ARM_TYPE) + 1);
 		warn("H713: unknown ARM message type %u", pump_type); return;
 	}
 	if (lo == 0x11)
@@ -435,6 +454,67 @@ pump_word(uint32_t w)
 			classify();
 		}
 		break;
+	}
+}
+
+/* ---- the display MIPS (blob 0x1180c "DispMips", 0x1242c) ------------------ */
+static void
+mips_frame(const uint8_t *p, uint8_t len)
+{
+	mmio_write_32(DIAG_MIPS_N, mmio_read_32(DIAG_MIPS_N) + 1);
+	mmio_write_32(DIAG_MIPS_LAST, p[0] | p[1] << 8 | p[2] << 16 |
+	              (uint32_t)p[3] << 24);
+	/* The aux block has no clock before the first ResetEDIDModule. */
+	if (len >= 3 && p[0] == 0x16 && p[1] < PORTS &&
+	    (mmio_read_32(SH_STATUS) & ST_EDID_MODULE)) {	/* 0x12330 */
+		uint8_t port = p[1], action = p[2];
+
+		if (action == 1)
+			sh_wr8(SH_HPD_COUNTER + port, sh_rd8(SH_HPD_COUNTER + port) + 1);
+		else if (action == 2 || action == 3)
+			hpd_pin(port, false),
+			sh_wr8(SH_HPD_COUNTER + port, action == 3 ? HPD_RESET_TICKS : 0);
+	} else if (len >= 1 && p[0] == 0x17) {			/* 0x120f0 */
+		reset_module();
+	}
+}
+
+/* The pump 0x7fd8 once more, for the MIPS: payload in the words, LSB first. */
+static void
+mips_poll(void)
+{
+	for (uint8_t q = 0; q < ARRAY_SIZE(mips); ++q) {
+		while (mmio_read_32(MIPS_FIFO_STAT(q))) {
+			uint32_t w = mmio_read_32(MIPS_MSG_DATA(q));
+
+			switch (mips[q].state) {
+			case 0:
+				if ((w & 0xff) != BOP_MARKER)
+					break;
+				mips[q].len = w >> 24;
+				mips[q].idx = 0;
+				for (uint8_t i = 0; i < sizeof(mips[q].buf); ++i)
+					mips[q].buf[i] = 0;
+				mips[q].state = mips[q].len > BOP_MAX_LEN ? 0 : 1;
+				break;
+			case 1:
+				mips[q].state = mips[q].len ? 2 : 0;
+				if (!mips[q].len)
+					mips_frame(mips[q].buf, 0);
+				break;
+			default:
+				for (uint8_t b = 0; b < 4 && mips[q].idx < mips[q].len;
+				     ++b, ++mips[q].idx) {
+					if (mips[q].idx < sizeof(mips[q].buf))
+						mips[q].buf[mips[q].idx] = w >> (8 * b);
+				}
+				if (mips[q].idx >= mips[q].len) {
+					mips[q].state = 0;
+					mips_frame(mips[q].buf, mips[q].len);
+				}
+				break;
+			}
+		}
 	}
 }
 
@@ -561,6 +641,7 @@ h713_poll(void)
 	while (txq_head == txq_tail &&
 	       msgbox_receive(&msgbox.dev, PORT_HDMI, &w) == SUCCESS)
 		pump_word(w);
+	mips_poll();
 
 	/* The tick (blob 0x10db4) and the wake-up (0x10f3c) of the HPD pin. */
 	bool tick = timeout_expired(hpd_deadline);
