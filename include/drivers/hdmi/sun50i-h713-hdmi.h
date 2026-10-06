@@ -34,4 +34,7 @@ static inline void h713_resume_done(void) {}
 /* drivers/css/sun50i-h713-css.c: the warm entry from "cpu op req". */
 void css_set_warm_entry(uint32_t lo, uint32_t hi);
 
+/* drivers/clock/sun50i-h713-r-ccu.c: CPUS_CLK_REG as r_ccu_init() found it. */
+uint32_t r_ccu_cpus_clk_at_boot(void);
+
 #endif /* DRIVERS_HDMI_SUN50I_H713_HDMI_H */

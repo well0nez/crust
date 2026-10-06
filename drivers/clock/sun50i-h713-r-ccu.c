@@ -12,6 +12,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <clock/ccu.h>
+#include <hdmi/sun50i-h713-hdmi.h>
 #include <platform/devices.h>
 #include <platform/prcm.h>
 
@@ -153,6 +154,12 @@ const struct ccu r_ccu = {
  * original value back at resume; the linker checks the size of .data.
  */
 static uint32_t cpus_clk_at_boot = 0xffffffff;
+
+uint32_t
+r_ccu_cpus_clk_at_boot(void)
+{
+	return cpus_clk_at_boot;
+}
 
 void
 r_ccu_suspend(uint8_t depth)
