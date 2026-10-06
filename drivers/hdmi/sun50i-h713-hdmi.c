@@ -514,8 +514,10 @@ send_notify(void)
 	static const char version[] = "crust-h713 contract v1 " VERSION_STRING;
 	uint8_t s[52];
 
-	for (uint8_t i = 0, end = 0; i < sizeof(s); ++i)
-		s[i] = (end || !(end = !version[i])) ? 0 : version[i];
+	for (uint8_t i = 0, end = 0; i < sizeof(s); ++i) {
+		end = end || !version[i];	/* never read past the NUL */
+		s[i] = end ? 0 : version[i];
+	}
 	txq_chan = CHAN_NOTIFY;
 	txq_put((uint32_t)TYPE_NOTIFY << 16 | 2 << 8);
 	txq_put(13);
