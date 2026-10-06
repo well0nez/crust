@@ -5,6 +5,7 @@
 
 #include <debug.h>
 #include <exception.h>
+#include <asm/exception.h>
 #include <spr.h>
 #include <steps.h>
 
@@ -14,6 +15,13 @@ report_exception(uint32_t exception)
 	uint32_t pc;
 
 	if (!exception)
+		return;
+	/*
+	 * H713: a start through the reset vector is not a fault, and RTC GP2,
+	 * where record_exception() writes, is the vendor firmware's rails flag
+	 * (read at 0xe20c/0xd6cc). Leave it alone unless something went wrong.
+	 */
+	if (CONFIG(PLATFORM_H713) && exception == RESET_EXCEPTION)
 		return;
 
 	pc = mfspr(SPR_SYS_EPCR_ADDR(0));
