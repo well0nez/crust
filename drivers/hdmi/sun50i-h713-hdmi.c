@@ -53,6 +53,7 @@
 #define SH_SCRATCH      (SH_GDATA + 228)           /* 65 bytes */
 #define SH_RPM_STATE    (H713_SHARED_BASE + 0x180)
 #define SH_RPM_BUF      (SH_RPM_STATE + 5)         /* 67 bytes */
+#define RPM_BUF_LEN     67                         /* the kernel's PAYLOAD_MAX */
 
 #define H713_MAGIC      0x33313748                 /* 'H','7','1','3' */
 #define H713_VERSION    0x00000002                 /* 2: diagnostic words */
@@ -499,7 +500,10 @@ pump_word(uint32_t w)
 		pump_type = w >> 16;
 		pump_len  = w >> 24;
 		pump_idx  = 0;
-		pump_state = pump_len > BOP_MAX_LEN ? 0 : 1;
+		/* The kernel writes the payload into the buffer itself and
+		 * sends length 0; a longer frame must still end inside it,
+		 * not in the words behind it (the diagnostic words at +0x200). */
+		pump_state = pump_len > RPM_BUF_LEN ? 0 : 1;
 		break;
 	case 1:
 		if (pump_len == 0) {
