@@ -873,10 +873,19 @@ h713_init(void)
 	 * Contract v5 (platform/memory.h): R and S at every start; K and X
 	 * only at the first one after a load (a v4 kernel zeroes the diag
 	 * words, not K), so the record survives an exception restart. D, A
-	 * and P are the loaders'.
+	 * and P are the loaders'. An acknowledged restart also keeps R's
+	 * HDMI bytes (+0x010..+0x0ff: HPD counters, ready, gate, mask, port
+	 * map): the aux block, the pin and the DDC RAM keep their state
+	 * across it, so a pulse under way ends and the pin can rise again
+	 * (PRUEFUNG5 F2). edid[] is gone with .bss; publish() waits for the
+	 * next upload.
 	 */
 	for (uintptr_t a = H713_SHARED_BASE; a < H713_SEEN_LIMIT; a += 4) {
-		if (a < H713_DIAG_BASE || a >= H713_DIAG_LIMIT)
+		bool kept = (a >= H713_DIAG_BASE && a < H713_DIAG_LIMIT) ||
+		            (acked && a >= H713_R_KEPT_BASE &&
+		             a < H713_R_KEPT_LIMIT);
+
+		if (!kept)
 			mmio_write_32(a, 0);
 	}
 	for (uintptr_t a = H713_K_BASE; first && a < H713_SHARED_LIMIT; a += 4) {
@@ -912,7 +921,10 @@ h713_init(void)
 	mmio_write_32(H713_K_BUILD2, (BUILD2_DRAM_MHZ & 0xfff) |
 	              (CONFIG_H713_BOARD_ID & 0xf) << 12 |
 	              (BUILD2_NET_CODE & 0xff) << 16);
-	portmap_init();
+	if (!acked)
+		portmap_init();
+	if (aux_clocked())	/* hardware state, also after a restart */
+		sh_status(ST_EDID_MODULE, 0);
 	/*
 	 * Load-bearing: system.c puts its own msgbox reference at every
 	 * suspend, and a last put would assert the msgbox reset (ccu.c); this
