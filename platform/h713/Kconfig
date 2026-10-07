@@ -50,6 +50,16 @@ config H713_DRAM_SELF_REFRESH
 		parameters below must be the ones the boot loader trained
 		the DRAM with.
 
+config H713_DEEP_SLEEP
+	bool "Deep sleep: root clocks to OSC24M, PLLs and the PLL LDO off"
+	depends on H713_DRAM_SELF_REFRESH
+	help
+		The rest of the vendor's standby (blob 0xdd20/0xdea8 down,
+		0xe3a8/0xddec/0xe3f4 and the MBUS rebuild up): bus and root
+		clocks to OSC24M, every PLL off, the RTC's 32k crystal off,
+		the PLL LDO off, VDD_SYS reset and gating. Ported, offline
+		model only.
+
 if H713_DRAM_SELF_REFRESH
 
 config H713_DRAM_CLK

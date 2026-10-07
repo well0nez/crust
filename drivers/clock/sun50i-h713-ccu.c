@@ -8,6 +8,9 @@
 #include <device.h>
 #include <stdint.h>
 #include <clock/ccu.h>
+#include <delay.h>
+#include <mmio.h>
+#include <util.h>
 #include <platform/devices.h>
 
 #include "ccu.h"
@@ -78,21 +81,73 @@ const struct ccu ccu = {
 	.regs   = DEV_CCU,
 };
 
-/* Light standby: the bus clocks of the main domain are not touched yet. */
+#if CONFIG(H713_DEEP_SLEEP)
+static uint32_t mbus_saved;
+
+/* 0xe164: the blob keeps MBUS (0x540) and PLL_PERIPH0 before the DRAM goes. */
+void __attribute__((noinline))
+ccu_suspend(void)
+{
+	mbus_saved = mmio_read_32(DEV_CCU + 0x540);
+}
+
+/*
+ * 0xe3f4 (MBUS and the NSI bus back after the PLLs) and the start of the
+ * blob's "power-up dram" step 37005 (MBUS from the saved value), both
+ * before the DRAM leaves self-refresh.
+ */
+void __attribute__((noinline))
+ccu_resume(void)
+{
+	mmio_write_32(DEV_CCU + 0x540, BIT(31));                /* 0xe40c */
+	udelay(1);
+	mmio_clr_32(DEV_CCU + 0x540, BIT(30));                  /* 0xe430 */
+	udelay(1);
+	mmio_set_32(DEV_CCU + 0xdd8, BIT(0));                   /* 0xe444 */
+	udelay(1);
+	mmio_set_32(DEV_CCU + 0xdd8, BIT(16));                  /* 0xe45c */
+	udelay(1);
+	mmio_set_32(DEV_TVTOP + 0x40, BIT(4));                  /* 0xe478 */
+	udelay(1);
+	mmio_set_32(DEV_TVTOP + 0x44, BIT(4));                  /* 0xe494 */
+	udelay(1);
+	mmio_set_32(DEV_TVTOP + 0x80, BIT(4));                  /* 0xe4a8 */
+	udelay(1);
+	mmio_set_32(DEV_CCU + 0x540, BIT(1));                   /* 0xe4bc */
+	udelay(1);
+	mmio_set_32(DEV_CCU + 0x540, 0x03000000);               /* 0xe4d4 */
+	udelay(1);
+	mmio_set_32(DEV_CCU + 0x540, BIT(30));                  /* 0xe4ec */
+	udelay(1);
+	/* 37005, 0xe6e0 */
+	mmio_write_32(DEV_CCU + 0x540, mbus_saved & 0x7);
+	udelay(200);
+	mmio_write_32(DEV_CCU + 0x540, mbus_saved & 0x03000007);
+	udelay(20);
+	mmio_set_32(DEV_CCU + 0x540, BIT(31));
+	udelay(20);
+	mmio_set_32(DEV_CCU + 0x540, BIT(30));
+	udelay(10000);
+}
+#else
+/* Light standby: the bus clocks of the main domain are not touched. */
 void
 ccu_suspend(void)
 {
 }
+#endif
 
 void
 ccu_suspend_cluster(uint32_t cluster UNUSED)
 {
 }
 
+#if !CONFIG(H713_DEEP_SLEEP)
 void
 ccu_resume(void)
 {
 }
+#endif
 
 void
 ccu_resume_cluster(uint32_t cluster UNUSED)

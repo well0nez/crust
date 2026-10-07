@@ -7,6 +7,7 @@
 #include <bitmap.h>
 #include <clock.h>
 #include <debug.h>
+#include <delay.h>
 #include <device.h>
 #include <mmio.h>
 #include <stddef.h>
@@ -161,15 +162,165 @@ r_ccu_cpus_clk_at_boot(void)
 	return cpus_clk_at_boot;
 }
 
+#if CONFIG(H713_DEEP_SLEEP)
+/*
+ * Deep sleep, ported from the vendor ARISC firmware (blob addresses):
+ * 0xdd20 on the way down, after the DRAM is in self-refresh and the cluster
+ * is reset - bus and root clocks to OSC24M (0xcdd8 mode 0), every PLL off
+ * (0xcc2c mode 0), the RTC's LOSC to the internal oscillator and the 32k
+ * crystal off, the PLL LDO off - and 0xdea8 (VDD_SYS reset, AVCC and bit 8
+ * gating); 0xe3a8 and 0xddec on the way back. 0x6d04(n) is the blob's
+ * microsecond busy wait, 0x6b68(n) its millisecond timer wait.
+ */
+#define RTC_LOSC_CTRL   (DEV_RTC + 0x000)
+#define RTC_LOSC_OUT    (DEV_RTC + 0x060)
+#define KEY_16AA        0x16aa0000
+
+/* 0xcdd8's table 0x17124: the clocks it moves to source 0, divider 1. */
+static const uintptr_t root_clk[8] = {
+	DEV_CCU + 0x500, DEV_CCU + 0x510, DEV_CCU + 0x520, DEV_CCU + 0x524,
+	DEV_R_PRCM + 0x124, DEV_R_PRCM + 0x000, DEV_R_PRCM + 0x00c,
+	DEV_R_PRCM + 0x010,
+};
+static uint32_t root_saved[8];
+static bool     root_valid[8];
+
+/* 0xcc2c's table 0x170b4: the PLLs. */
+static const uint16_t pll_reg[12] = {
+	0x000, 0x010, 0x020, 0x028, 0x030, 0x040, 0x048, 0x050, 0x058, 0x060,
+	0x068, 0x078,
+};
+static uint32_t pll_saved[12];
+
+static void
+root_clocks_to_osc24m(void)                             /* 0xcdd8(0) */
+{
+	for (uint8_t i = 0; i < ARRAY_SIZE(root_clk); ++i) {
+		uint32_t v = mmio_read_32(root_clk[i]);
+
+		if (!root_valid[i]) {                           /* 0xcec0 */
+			root_saved[i] = v & 0x07000303;
+			root_valid[i] = true;
+		}
+		v &= 0xf8ffffff;                                /* source 0 */
+		mmio_write_32(root_clk[i], v);                  /* 0xcefc */
+		mmio_write_32(root_clk[i], v & 0xfffffc00);     /* 0xcf0c */
+		udelay(10000);                                  /* 0xcf14 */
+	}
+}
+
+static void
+root_clocks_restore(void)                               /* 0xcdd8(4) */
+{
+	for (uint8_t i = 0; i < ARRAY_SIZE(root_clk); ++i) {
+		uint32_t v = mmio_read_32(root_clk[i]);
+
+		if (root_valid[i]) {                            /* 0xce6c */
+			v |= root_saved[i] & 0x00000303;
+			mmio_write_32(root_clk[i], v);
+			v = (v & 0xf8ffffff) | (root_saved[i] & 0x07000000);
+			mmio_write_32(root_clk[i], v);
+			root_valid[i] = false;
+		}
+		udelay(10000);
+	}
+}
+
+static void
+plls_off(void)                                          /* 0xcc2c(0) */
+{
+	for (uint8_t i = 0; i < ARRAY_SIZE(pll_reg); ++i) {
+		uint32_t v = mmio_read_32(DEV_CCU + pll_reg[i]);
+
+		pll_saved[i] = v & 0xa000ff03;   /* enable, lock-en, N, M */
+		mmio_write_32(DEV_CCU + pll_reg[i], v & 0x7fffffff);
+	}
+}
+
+static void
+plls_restore(void)                                      /* 0xcc2c(1) */
+{
+	for (uint8_t i = 0; i < ARRAY_SIZE(pll_reg); ++i) {
+		uint32_t v = mmio_read_32(DEV_CCU + pll_reg[i]);
+
+		mmio_write_32(DEV_CCU + pll_reg[i],
+		              (v & 0x5fff00fc) | pll_saved[i]);
+	}
+}
+
+void __attribute__((noinline))
+r_ccu_suspend(uint8_t depth UNUSED)
+{
+	uint32_t v;
+
+	root_clocks_to_osc24m();                                /* 0xdd30 */
+	udelay(100);
+	plls_off();                                             /* 0xdd40 */
+	udelay(100);
+	v = (mmio_read_32(RTC_LOSC_CTRL) & ~BIT(0)) | KEY_16AA; /* 0xdd50 */
+	mmio_write_32(RTC_LOSC_CTRL, v);
+	mmio_write_32(RTC_LOSC_CTRL, v);
+	udelay(1);
+	v = (mmio_read_32(RTC_LOSC_CTRL) & ~BIT(4)) | KEY_16AA; /* 0xdd74 */
+	mmio_write_32(RTC_LOSC_CTRL, v);
+	mmio_write_32(RTC_LOSC_CTRL, v);
+	udelay(1);
+	mmio_clr_32(RTC_LOSC_OUT, BIT(0));                      /* 0xdd9c */
+	udelay(100);
+	v = (mmio_read_32(PLL_CTRL_REG1) & ~PLL_CTRL_REG1_LDO_EN) |
+	    PLL_CTRL_REG1_KEY;                                  /* 0xddbc */
+	mmio_write_32(PLL_CTRL_REG1, v);
+	mmio_write_32(PLL_CTRL_REG1, v);
+	udelay(100);
+	/* 0xdea8 (the blob skips it for power_down or a USB wake source) */
+	mmio_clr_32(VDD_SYS_RESET_REG, VDD_SYS_RESET);
+	mmio_set_32(VDD_SYS_PWROFF_GATING_REG, AVCC_GATING);
+	mmio_set_32(VDD_SYS_PWROFF_GATING_REG, UNK_GATING_BIT_08);
+}
+
+void __attribute__((noinline))
+r_ccu_resume(void)
+{
+	uint32_t v;
+
+	/* 0xe3a8 */
+	mmio_clr_32(VDD_SYS_PWROFF_GATING_REG, UNK_GATING_BIT_08);
+	mmio_clr_32(VDD_SYS_PWROFF_GATING_REG, AVCC_GATING);
+	mmio_set_32(VDD_SYS_RESET_REG, VDD_SYS_RESET);
+	/* 0xddec */
+	v = mmio_read_32(PLL_CTRL_REG1) | PLL_CTRL_REG1_KEY |
+	    PLL_CTRL_REG1_LDO_EN;
+	mmio_write_32(PLL_CTRL_REG1, v);
+	mmio_write_32(PLL_CTRL_REG1, v);
+	udelay(100);
+	/* 0xde24: the blob ORs 0x00a70010 -- key 0x00a7, not 0x16aa -- into
+	 * LOSC_CTRL; kept as it is, it is what wakes stock up. */
+	v = mmio_read_32(RTC_LOSC_CTRL) | 0x00a70010;
+	mmio_write_32(RTC_LOSC_CTRL, v);
+	mmio_write_32(RTC_LOSC_CTRL, v);
+	udelay(1);
+	v = mmio_read_32(RTC_LOSC_CTRL) | KEY_16AA | BIT(0);    /* 0xde44 */
+	mmio_write_32(RTC_LOSC_CTRL, v);
+	mmio_write_32(RTC_LOSC_CTRL, v);
+	udelay(1);
+	mmio_set_32(RTC_LOSC_OUT, BIT(0));                      /* 0xde68 */
+	udelay(100);
+	plls_restore();                                         /* 0xde7c */
+	udelay(100);
+	root_clocks_restore();                                  /* 0xde8c */
+	udelay(100);
+	if (cpus_clk_at_boot != 0xffffffff)
+		mmio_write_32(CPUS_CLK_REG, cpus_clk_at_boot);
+}
+
+#else /* !CONFIG(H713_DEEP_SLEEP) */
+
 void
 r_ccu_suspend(uint8_t depth)
 {
 	/*
-	 * Light standby only: PLLs, HOSC and the R domain stay as they are.
-	 * The blob's deeper steps (0xdd20: PLL_CTRL_REG1 key writes; 0xdea8:
-	 * VDD_SYS_PWROFF_GATING |= 4, |= 0x100, VDD_SYS_RESET &= ~1) are
-	 * written down in tables/arisc-contract.csv and wait for the DRAM
-	 * self-refresh port (drivers/dram/sun50i-h713-dram.c).
+	 * Light standby: PLLs, HOSC and the R domain stay as they are
+	 * (H713_DEEP_SLEEP ports the blob's 0xdd20/0xdea8).
 	 */
 	(void)depth;
 }
@@ -180,6 +331,8 @@ r_ccu_resume(void)
 	if (cpus_clk_at_boot != 0xffffffff)
 		mmio_write_32(CPUS_CLK_REG, cpus_clk_at_boot);
 }
+
+#endif
 
 void
 r_ccu_init(void)
