@@ -228,7 +228,7 @@
 #define H713_ERR_TXQ_FULL    2
 #define H713_ERR_SB_DROP     3
 #define H713_ERR_CPU_OP      4
-#define H713_ERR_AUX_CLOCK   5  /* detail 1 publish, 2 HPD pin, 3 RequestEDID, 4 MIPS */
+#define H713_ERR_AUX_CLOCK   5  /* detail 1 publish, 2 HPD pin, 3 RequestEDID */
 #define H713_ERR_DRAM_PHY    6
 #define H713_ERR_POLL        7
 #define H713_ERR_RESTART     8

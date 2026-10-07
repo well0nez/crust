@@ -385,7 +385,8 @@ aux_clocked(void)
 }
 
 /* Every way into the aux block asks first: refused, recorded and counted
- * without the clock (@who: 1 publish, 2 HPD pin, 3 RequestEDID, 4 MIPS). */
+ * without the clock (@who: 1 publish, 2 HPD pin, 3 RequestEDID). A MIPS
+ * 0x16 is only dropped (mips_frame). */
 static bool
 aux_ok(uint8_t who)
 {
@@ -692,8 +693,12 @@ mips_frame(uint8_t q, const uint8_t *p, uint8_t len)
 		uint8_t port = p[1], action = p[2];
 
 		h713_cnt(H713_CNT_MIPS_16);
-		/* no aux clock before the first ResetEDIDModule */
-		if (!aux_ok(4))
+		/*
+		 * No aux clock before the first ResetEDIDModule: dropped as
+		 * the blob drops it, counted above with every 0x16 and not as
+		 * an error - the MIPS may well send it that early at boot.
+		 */
+		if (!aux_clocked())
 			return;
 		if (action == 1)
 			sh_wr8(SH_HPD_COUNTER + port, sh_rd8(SH_HPD_COUNTER + port) + 1);
