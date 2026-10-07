@@ -207,7 +207,6 @@ static const uintptr_t root_clk[8] = {
 	DEV_R_PRCM + 0x010,
 };
 static uint32_t root_saved[8];
-static bool     root_valid[8];
 
 /* 0xcc2c's table 0x170b4: the PLLs. */
 static const uint16_t pll_reg[12] = {
@@ -216,16 +215,23 @@ static const uint16_t pll_reg[12] = {
 };
 static uint32_t pll_saved[12];
 
+/*
+ * root_saved and pll_saved hold this sleep's state: set once both are
+ * saved, cleared by the restore. In .bss, so a firmware restart clears it:
+ * the blob's per-root flags (0xcec0/0xce6c) left the PLLs out, and a
+ * restart in the sleep put them back from zeros, N 0 and EN 0 (PRUEFUNG4
+ * evidence F8). Without it nothing is restored, and the state machine goes
+ * on to the reset.
+ */
+static bool saved;
+
 static void
 root_clocks_to_osc24m(void)                             /* 0xcdd8(0) */
 {
 	for (uint8_t i = 0; i < ARRAY_SIZE(root_clk); ++i) {
 		uint32_t v = mmio_read_32(root_clk[i]);
 
-		if (!root_valid[i]) {                           /* 0xcec0 */
-			root_saved[i] = v & 0x07000303;
-			root_valid[i] = true;
-		}
+		root_saved[i] = v & 0x07000303;                 /* 0xcec0 */
 		v &= 0xf8ffffff;                                /* source 0 */
 		mmio_write_32(root_clk[i], v);                  /* 0xcefc */
 		mmio_write_32(root_clk[i], v & 0xfffffc00);     /* 0xcf0c */
@@ -239,13 +245,10 @@ root_clocks_restore(void)                               /* 0xcdd8(4) */
 	for (uint8_t i = 0; i < ARRAY_SIZE(root_clk); ++i) {
 		uint32_t v = mmio_read_32(root_clk[i]);
 
-		if (root_valid[i]) {                            /* 0xce6c */
-			v |= root_saved[i] & 0x00000303;
-			mmio_write_32(root_clk[i], v);
-			v = (v & 0xf8ffffff) | (root_saved[i] & 0x07000000);
-			mmio_write_32(root_clk[i], v);
-			root_valid[i] = false;
-		}
+		v |= root_saved[i] & 0x00000303;                /* 0xce6c */
+		mmio_write_32(root_clk[i], v);
+		v = (v & 0xf8ffffff) | (root_saved[i] & 0x07000000);
+		mmio_write_32(root_clk[i], v);
 		udelay(10000);
 	}
 }
@@ -259,6 +262,7 @@ plls_off(void)                                          /* 0xcc2c(0) */
 		pll_saved[i] = v & 0xa000ff03;   /* enable, lock-en, N, M */
 		mmio_write_32(DEV_CCU + pll_reg[i], v & 0x7fffffff);
 	}
+	saved = true;
 }
 
 static void
@@ -322,9 +326,12 @@ r_ccu_resume(void)
 	udelay(100);
 #endif
 	mmio_write_32(LOSC_SEEN, mmio_read_32(RTC_LOSC_CTRL));
-	plls_restore();                                         /* 0xde7c */
-	udelay(100);
-	root_clocks_restore();                                  /* 0xde8c */
+	if (saved) {
+		plls_restore();                                 /* 0xde7c */
+		udelay(100);
+		root_clocks_restore();                          /* 0xde8c */
+		saved = false;
+	}
 	udelay(100);
 	cpus_clk_osc24m();      /* the blob's PLL setting is not ours */
 }
