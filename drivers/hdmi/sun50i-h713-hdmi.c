@@ -112,8 +112,10 @@
 #define R_PIO_PL_CFG0   (DEV_R_PIO + 0x000)    /* PL0..PL7 function */
 #define R_PIO_PL_CFG1   (DEV_R_PIO + 0x004)    /* PL8..PL15 function */
 #define R_PIO_PL_DATA   (DEV_R_PIO + 0x010)
-#define R_PIO_PL_DRV0   (DEV_R_PIO + 0x014)    /* PL0..PL15 drive */
-#define R_PIO_PL_PULL0  (DEV_R_PIO + 0x01c)    /* PL0..PL15 pull */
+/* D1-style banks (kernel pinctrl-sun50i-h713-r.c): drive 4 bits per pin. */
+#define R_PIO_PL_DRV0   (DEV_R_PIO + 0x014)    /* PL0..PL7 drive */
+#define R_PIO_PL_DRV1   (DEV_R_PIO + 0x018)    /* PL8..PL15 drive */
+#define R_PIO_PL_PULL0  (DEV_R_PIO + 0x024)    /* PL0..PL15 pull */
 
 #define BOP_MARKER      0xa5
 #define BOP_MAX_LEN     128
@@ -174,7 +176,8 @@ static uint32_t pl_cfg_saved;
  * input and the LEDs for the sleep changes their function, drive and pull,
  * and gpio_put() gives none of that back.
  */
-static uint32_t pl_cfg0_saved, pl_drv0_saved, pl_pull0_saved, pl_data_saved;
+static uint32_t pl_cfg0_saved, pl_drv0_saved, pl_drv1_saved, pl_pull0_saved;
+static uint32_t pl_data_saved;
 static const struct device *cir;
 static struct {
 	uint8_t state, len, idx, buf[8];
@@ -741,6 +744,7 @@ h713_suspend_prepare(void)
 	pl_cfg_saved = mmio_read_32(R_PIO_PL_CFG1);	/* PL9's function */
 	pl_cfg0_saved  = mmio_read_32(R_PIO_PL_CFG0);
 	pl_drv0_saved  = mmio_read_32(R_PIO_PL_DRV0);
+	pl_drv1_saved  = mmio_read_32(R_PIO_PL_DRV1);	/* PL9, the IR pin */
 	pl_pull0_saved = mmio_read_32(R_PIO_PL_PULL0);
 	pl_data_saved  = mmio_read_32(R_PIO_PL_DATA);
 	cir = cir_get();
@@ -811,6 +815,7 @@ h713_resume_done(void)
 	mmio_clrset_32(R_PIO_PL_DATA, 0x3, pl_data_saved & 0x3);
 	mmio_write_32(R_PIO_PL_PULL0, pl_pull0_saved);
 	mmio_write_32(R_PIO_PL_DRV0, pl_drv0_saved);
+	mmio_write_32(R_PIO_PL_DRV1, pl_drv1_saved);
 	mmio_write_32(R_PIO_PL_CFG0, pl_cfg0_saved);
 	sh_status(0, ST_ASLEEP);
 	wake_timer_ms = 0;	/* one standby at a time, as the vendor's 0x26 */

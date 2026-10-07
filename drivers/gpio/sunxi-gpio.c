@@ -15,24 +15,38 @@
 
 #include "gpio.h"
 
+#if CONFIG(PLATFORM_H713)
+/*
+ * The H713's PIO and R_PIO use the D1-style layout (kernel
+ * pinctrl-sun50i-h713-r.c, SUNXI_PINCTRL_NEW_REG_LAYOUT): 0x30 bytes per
+ * port, drive 4 bits per pin from +0x14, pull from +0x24.
+ */
+#define PORT_SIZE            0x30
+#define DRIVE_WIDTH          4
+#define PULL_OFFSET          0x24
+#else
+#define PORT_SIZE            0x24
+#define DRIVE_WIDTH          2
+#define PULL_OFFSET          0x1c
+#endif
+
 #define MODE_WIDTH           4
 #define MODE_PPW             (WORD_BIT / MODE_WIDTH)
-#define MODE_REG(port, pin)  (0x0000 + 0x24 * (port) + 4 * ((pin) / MODE_PPW))
+#define MODE_REG(port, pin)  (0x0000 + PORT_SIZE * (port) + 4 * ((pin) / MODE_PPW))
 #define MODE_BIT(pin)        (MODE_WIDTH * ((pin) % MODE_PPW))
 
 #define DATA_WIDTH           1
 #define DATA_PPW             (WORD_BIT / DATA_WIDTH)
-#define DATA_REG(port)       (0x0010 + 0x24 * (port))
+#define DATA_REG(port)       (0x0010 + PORT_SIZE * (port))
 #define DATA_BIT(pin)        (pin)
 
-#define DRIVE_WIDTH          2
 #define DRIVE_PPW            (WORD_BIT / DRIVE_WIDTH)
-#define DRIVE_REG(port, pin) (0x0014 + 0x24 * (port) + 4 * ((pin) / DRIVE_PPW))
+#define DRIVE_REG(port, pin) (0x0014 + PORT_SIZE * (port) + 4 * ((pin) / DRIVE_PPW))
 #define DRIVE_BIT(pin)       (DRIVE_WIDTH * ((pin) % DRIVE_PPW))
 
 #define PULL_WIDTH           2
 #define PULL_PPW             (WORD_BIT / PULL_WIDTH)
-#define PULL_REG(port, pin)  (0x001c + 0x24 * (port) + 4 * ((pin) / PULL_PPW))
+#define PULL_REG(port, pin)  (PULL_OFFSET + PORT_SIZE * (port) + 4 * ((pin) / PULL_PPW))
 #define PULL_BIT(pin)        (PULL_WIDTH * ((pin) % PULL_PPW))
 
 #define PINS_PER_PORT        32
