@@ -717,6 +717,7 @@ sb_frame(void)
 			break;
 		}
 		info("H713: cpu op req, warm entry %p", (void *)sb_data[1]);
+		h713_sleep_event(H713_EV_CPU_OP);
 		css_set_warm_entry(sb_data[1], 0);
 		udelay(CPU_OP_DELAY_US);
 		css_set_power_state(0, sb_data[0] & 0xf, SCPI_CSS_OFF,
@@ -733,6 +734,7 @@ sb_frame(void)
 
 		woke = false;
 		mmio_write_32(H713_DIAG_WAKE_TIMER, 0);
+		h713_sleep_event(H713_EV_RESTORE);
 		sb_reply(type, 0, &wake, 1);
 		break;
 	}
@@ -740,9 +742,11 @@ sb_frame(void)
 		if (sb_count >= 1 && sb_data[0] >> 30 == WAKE_SRC_TIMER)
 			mmio_write_32(H713_DIAG_WAKE_TIMER,
 			              sb_data[0] & 0x3fffffff);
+		h713_sleep_request();
 		sb_reply(type, 0, NULL, 0); break;
 	case TYPE_WAKE_CLR:
 		mmio_write_32(H713_DIAG_WAKE_TIMER, 0);
+		h713_sleep_request();
 		sb_reply(type, 0, NULL, 0); break;
 	default:
 		sb_reply(type, RESULT_UNKNOWN, NULL, 0); break;
@@ -823,6 +827,7 @@ h713_init(void)
 		if (a < H713_K_LIMIT || a >= H713_X_BASE)
 			mmio_write_32(a, 0);
 	}
+	h713_sleep_init(first);
 	mmio_write_32(DIAG_CPUS_CLK, r_ccu_cpus_clk_at_boot());
 	mmio_write_32(DIAG_INITS, mmio_read_32(DIAG_INITS) + 1);
 	mmio_write_32(DIAG_INTC_80, mmio_read_32(DEV_R_INTC + 0x80));
@@ -936,6 +941,7 @@ h713_wake_poll(void)
 
 	uint32_t timer = mmio_read_32(H713_DIAG_WAKE_TIMER);
 
+	h713_net_poll();
 	/*
 	 * After a firmware restart while asleep (system.c goes to SS_OFF) the
 	 * deadlines are gone with .bss; without fresh ones a deadline in the

@@ -6,7 +6,22 @@
 #ifndef DRIVERS_HDMI_SUN50I_H713_HDMI_H
 #define DRIVERS_HDMI_SUN50I_H713_HDMI_H
 
+#include <stdbool.h>
 #include <stdint.h>
+
+/* What happens to a standby (sun50i-h713-sleep.c), as h713_sleep_event(). */
+enum {
+	H713_EV_CPU_OP,         /* 0x22 taken, the cluster goes down */
+	H713_EV_RESTORE,        /* 0x11 */
+	H713_EV_SUSPEND,        /* the system state machine suspends */
+	H713_EV_RESUMED,        /* CPU0 released */
+};
+
+#if CONFIG(H713_SLEEP_NET)
+#define H713_NET_CODE CONFIG_H713_SLEEP_NET_INTERVAL
+#else
+#define H713_NET_CODE 0
+#endif
 
 #if CONFIG(H713_HDMI)
 
@@ -25,6 +40,21 @@ void h713_err(uint8_t bit, uint8_t detail, uint32_t data);
 /** Count one event in the counter byte at @at (H713_CNT_*), wrapping. */
 void h713_cnt(uintptr_t at);
 
+/** Record the failure (cause, detail, data), undo the sleep state, reset. */
+noreturn void h713_fail(uint8_t cause, uint8_t detail, uint32_t data);
+/** First thing at every start: a restart inside a standby resets. */
+void h713_restart_check(uint32_t exception);
+/** From h713_init(): what a first start finds of the sleep net. */
+void h713_sleep_init(bool first);
+/** 0x25/0x26: take the kernel's net request, if it wrote a valid one. */
+void h713_sleep_request(void);
+/** A standby event (H713_EV_*). */
+void h713_sleep_event(uint8_t ev);
+/** A step boundary (record_step): the net is fed. */
+void h713_sleep_step(void);
+/** Awake and asleep loops: time, feed, confirm, budgets. */
+void h713_net_poll(void);
+
 #else
 
 static inline void h713_init(void) {}
@@ -35,6 +65,21 @@ static inline void h713_resume_done(void) {}
 static inline void h713_err(uint8_t bit UNUSED, uint8_t detail UNUSED,
                             uint32_t data UNUSED) {}
 static inline void h713_cnt(uintptr_t at UNUSED) {}
+
+/* Without the contract there is no standby to fail: stop, as before. */
+static inline noreturn void
+h713_fail(uint8_t cause UNUSED, uint8_t detail UNUSED, uint32_t data UNUSED)
+{
+	for (;;) {
+	}
+}
+
+static inline void h713_restart_check(uint32_t exception UNUSED) {}
+static inline void h713_sleep_init(bool first UNUSED) {}
+static inline void h713_sleep_request(void) {}
+static inline void h713_sleep_event(uint8_t ev UNUSED) {}
+static inline void h713_sleep_step(void) {}
+static inline void h713_net_poll(void) {}
 
 #endif
 

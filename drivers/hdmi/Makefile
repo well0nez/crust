@@ -4,3 +4,4 @@
 #
 
 obj-$(CONFIG_H713_HDMI) += sun50i-h713-hdmi.o
+obj-$(CONFIG_H713_HDMI) += sun50i-h713-sleep.o

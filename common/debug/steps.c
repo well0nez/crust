@@ -17,6 +17,7 @@
  * which the kernel driver shows (platform/memory.h); they survive a firmware
  * restart and a warm reset, not a power cycle.
  */
+#include <hdmi/sun50i-h713-hdmi.h>
 #include <platform/memory.h>
 #define LAST_EXCEPTION_REG H713_DIAG_EXCEPTION
 #define LAST_STEP_REG      H713_DIAG_STEP
@@ -36,6 +37,9 @@ void
 record_step(uint32_t step)
 {
 	mmio_write_32(LAST_STEP_REG, step);
+	/* H713: a step boundary feeds the sleep net (sun50i-h713-sleep.c) */
+	if (CONFIG(PLATFORM_H713))
+		h713_sleep_step();
 }
 
 void

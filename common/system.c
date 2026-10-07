@@ -87,6 +87,9 @@ system_state_machine(uint32_t exception)
 	uint8_t initial_state = system_state;
 	uint8_t suspend_depth;
 
+	/* H713: a restart inside a standby ends in a clean reset. */
+	h713_restart_check(exception);
+
 	if (initial_state > SS_BOOT) {
 		/*
 		 * If the firmware started in any state other than BOOT or
@@ -164,10 +167,12 @@ system_state_machine(uint32_t exception)
 			if (mailbox && !CONFIG(H713_HDMI))
 				scpi_poll(mailbox);
 			h713_poll();
+			h713_net_poll();
 
 			break;
 		case SS_SHUTDOWN:
 		case SS_SUSPEND:
+			h713_sleep_event(H713_EV_SUSPEND);
 			debug("Suspending...");
 
 			/* Synchronize device state with Linux. */
@@ -310,6 +315,7 @@ system_state_machine(uint32_t exception)
 			css_resume();
 
 			record_step(STEP_RESUME_COMPLETE);
+			h713_sleep_event(H713_EV_RESUMED);
 			debug("Resume complete!");
 
 			/* The system is now awake. */
