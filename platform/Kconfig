@@ -63,7 +63,8 @@ config PLATFORM_H713
 	help
 		Allwinner H713 (sun50iw12): the R domain of the D1
 		generation, an HDMI receiver front end owned by the ARISC.
-		Deep sleep is not ported yet (no DRAM self-refresh).
+		Standby with DRAM self-refresh (H713_DRAM_SELF_REFRESH);
+		deep sleep is ported but has not run on a device.
 
 endchoice
 

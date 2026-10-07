@@ -308,7 +308,14 @@ r_ccu_suspend(uint8_t depth UNUSED)
 	udelay(100);
 #endif
 #if CONFIG(H713_DEEP_VDD_SYS)
-	/* 0xdea8 (the blob skips it for power_down or a USB wake source) */
+	/*
+	 * 0xdea8. When the blob runs this pair is not settled: the RE note
+	 * doku/nachtlog/S39:92 gives the condition of 0xe3a8 as "power_down
+	 * != 0 or wake mask bit 13 clear", so with the stock defaults
+	 * (power_down 0, mask 0x2000) neither step would run - an earlier
+	 * comment here said the blob skips it for power_down. Not checked
+	 * against the disassembly (PRUEFUNG5 DEEP-02).
+	 */
 	mmio_clr_32(VDD_SYS_RESET_REG, VDD_SYS_RESET);
 	mmio_set_32(VDD_SYS_PWROFF_GATING_REG, AVCC_GATING);
 	mmio_set_32(VDD_SYS_PWROFF_GATING_REG, UNK_GATING_BIT_08);

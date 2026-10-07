@@ -839,9 +839,11 @@ h713_init(void)
 	              (uint32_t)CONFIG(H713_DEEP_SLEEP) << 25 |
 	              (uint32_t)CONFIG(H713_IR_WAKE_NECX) << 26 |
 	              (uint32_t)CONFIG(H713_DEEP_VDD_SYS) << 27 |
-	              (uint32_t)CONFIG(H713_DEEP_PLL_LDO) << 28);
+	              (uint32_t)CONFIG(H713_DEEP_PLL_LDO) << 28 |
+	              (uint32_t)CONFIG(H713_TEST) << 30);
 	mmio_write_32(H713_K_COMPAT, H713_COMPAT);
-	mmio_write_32(H713_K_BUILD2, BUILD2_DRAM_MHZ & 0xfff);
+	mmio_write_32(H713_K_BUILD2, (BUILD2_DRAM_MHZ & 0xfff) |
+	              (CONFIG_H713_BOARD_ID & 0xf) << 12);
 	portmap_init();
 	/*
 	 * Load-bearing: system.c puts its own msgbox reference at every

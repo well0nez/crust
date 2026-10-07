@@ -37,8 +37,16 @@ config H713_RAILS_PIN
 	help
 		standby_param on the HY310 and HY300 Pro puts vdd-cpu,
 		vdd-sys, vcc-pll and vcc-dram all on PL6. What hangs on it
-		is unmeasured (FB-STANDBY 7.5), so the default never
-		touches the pin.
+		is unmeasured (FB-STANDBY 7.5). No code reads this option:
+		it records the board fact, and crust never touches the pin.
+
+config H713_BOARD_ID
+	int "Board in the build word (BUILD2 15..12): 1 HY310, 2 HY300 Pro"
+	default 0
+	range 0 15
+	help
+		Lets the kernel and the build gates tell an image built for
+		one board from one built for another (0 = not said).
 
 config H713_DRAM_SELF_REFRESH
 	bool "Put the DRAM into self-refresh in standby (vendor V1.15 port)"
@@ -51,35 +59,56 @@ config H713_DRAM_SELF_REFRESH
 		the DRAM with.
 
 config H713_DEEP_SLEEP
-	bool "Deep sleep: root clocks to OSC24M, PLLs and the PLL LDO off"
+	bool "Deep sleep: root clocks to OSC24M and the PLLs off (not for a release)"
 	depends on H713_DRAM_SELF_REFRESH
 	help
-		The rest of the vendor's standby (blob 0xdd20/0xdea8 down,
-		0xe3a8/0xddec/0xe3f4 and the MBUS rebuild up): bus and root
-		clocks to OSC24M, every PLL off, the RTC's 32k crystal off,
-		the PLL LDO off, VDD_SYS reset and gating. Ported, offline
-		model only.
+		Part of the vendor's standby (blob 0xdd20 down, 0xe3f4, the
+		MBUS rebuild and 0xde7c..0xde8c up): bus and root clocks to
+		OSC24M, every PLL off, the RTC's LOSC as the suspend found it
+		(LOSC_CTRL saved and put back), and on the way back MBUS
+		reset and rebuilt with the NSI and display-bus gates
+		(sun50i-h713-ccu.c). The PLL LDO and the VDD_SYS steps of
+		the blob come only with their own switches below. Ported,
+		offline model only; no device run.
+
+config H713_HOSC_IS_DCXO
+	bool "HOSC is a DCXO that the PLL LDO step does not stop (unmeasured)"
+	depends on H713_DEEP_SLEEP
+	help
+		The PLL LDO step is safe only if the 24 MHz clock does not
+		come through the PLL domain. The HY310 has CRYSTAL_EN (R_PRCM
+		0x244 bit 2) set, and RTC 0x160 (the H6's DCXO control) has
+		never been read for this question (PRUEFUNG5 DEEP-08). No
+		board is confirmed; no product defconfig sets this.
 
 config H713_DEEP_PLL_LDO
 	bool "Deep sleep: the PLL LDO off"
-	depends on H713_DEEP_SLEEP
-	default y
+	depends on H713_DEEP_SLEEP && H713_HOSC_IS_DCXO
 	help
 		Blob 0xddbc down, 0xddec up. The HY310 has R_PRCM 0x244
 		bit 2 (CRYSTAL_EN) set (read 07.10.2026): the 24 MHz clock
 		may come through the PLL domain's pads, and upstream crust
-		turns that path off before the LDO (PRUEFUNG4). Off for the
-		first device run D1a.
+		turns that path off before the LDO (PRUEFUNG4). Build word
+		bit 28; TF-A and the kernel refuse such an image unless told
+		otherwise.
 
 config H713_DEEP_VDD_SYS
 	bool "Deep sleep: VDD_SYS reset and AVCC/bit 8 gating"
 	depends on H713_DEEP_SLEEP
-	default y
 	help
 		Blob 0xdea8 down, 0xe3a8 up. It resets the main domain - CCU
 		gates, pin functions, UART0, the msgbox and the SoC watchdog
-		that the test runs use as their net - and mainline Linux
-		restores none of it (PRUEFUNG4 PD-1, PD-3). Off for D1a.
+		- and mainline Linux restores none of it (PRUEFUNG4 PD-1,
+		PD-3; PRUEFUNG5 design A: never in a suspend). Build word bit
+		27; TF-A and the kernel always refuse such an image. Only for
+		the trace comparison with the blob.
+
+config H713_TEST
+	bool "Test build (build word bit 30, never for a release)"
+	help
+		Switches for the device stages that provoke a failure on
+		purpose. The kernel reports the bit as a test build; the
+		release gates refuse it.
 
 if H713_DRAM_SELF_REFRESH
 
