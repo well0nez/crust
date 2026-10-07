@@ -350,6 +350,31 @@ reply_frame(uint8_t *payload, uint8_t len)
 }
 
 /* ---- the HDMI aux block --------------------------------------------------- */
+/*
+ * Is the aux block clocked and out of reset? ResetEDIDModule's first two
+ * stores (R_PRCM 0x120 bit 16, 0x124 bit 31) do that, and from the ARM an
+ * access before them hangs the SoC. Hardware state, unlike the status
+ * bit, which a firmware restart clears (PRUEFUNG5 F9).
+ */
+static bool
+aux_clocked(void)
+{
+	return (mmio_read_32(R_HDMI_AUX_GATE_REG) & BIT(16)) &&
+	       (mmio_read_32(R_HDMI_AUX_CLK_REG) & BIT(31));
+}
+
+/* Every way into the aux block asks first: refused, recorded and counted
+ * without the clock (@who: 1 publish, 2 HPD pin, 3 RequestEDID, 4 MIPS). */
+static bool
+aux_ok(uint8_t who)
+{
+	if (aux_clocked())
+		return true;
+	h713_err(H713_ERR_AUX_CLOCK, who, mmio_read_32(R_HDMI_AUX_GATE_REG));
+	h713_cnt(H713_CNT_MIPS_DROP);
+	return false;
+}
+
 static void
 aux_gate(uint8_t mask, bool open)
 {
@@ -362,8 +387,11 @@ static void
 hpd_pin(uint8_t port, bool high)
 {
 	uint32_t bit = BIT(sh_rd8(SH_PORTMAP + 8 * port + REC_PIN) & 7);
-	uint32_t v   = mmio_read_32(AUX_HPD_REG);
+	uint32_t v;
 
+	if (!aux_ok(2))
+		return;
+	v = mmio_read_32(AUX_HPD_REG);
 	if (!sh_rd8(SH_EDID_GATE))
 		high = false; /* blob 0x121e4: EDID-HPD LOW while gated */
 	mmio_write_32(AUX_HPD_REG, high ? (v & ~bit) : (v | bit));
@@ -381,7 +409,7 @@ publish(void)
 {
 	uint8_t mask = sh_rd8(SH_EDID_MASK);
 
-	if (!sh_rd8(SH_EDID_READY) || !edid_valid)
+	if (!sh_rd8(SH_EDID_READY) || !edid_valid || !aux_ok(1))
 		return;
 	aux_gate(0x7, false);
 	for (uint8_t port = 0; port < PORTS; ++port) {
@@ -549,7 +577,7 @@ group_15(uint8_t hi)
 		frame[1] = 0xf8, frame[2] = 0x01, frame[3] = 0x01;
 		frame[4] = sh_rd8(SH_EDID_READY), frame[5] = 0;
 		reply_frame(frame, 8);
-	} else if (hi == 3 && port < PORTS) {	/* RequestEDID: 4 x 64 bytes */
+	} else if (hi == 3 && port < PORTS && aux_ok(3)) { /* RequestEDID */
 		/*
 		 * Blob 0x1269c..0x12728: the gate closes before the DDC RAM is
 		 * read and opens again after the four frames (0x11cac(7, 0) and
@@ -635,11 +663,12 @@ mips_frame(const uint8_t *p, uint8_t len)
 	mmio_write_32(DIAG_MIPS_N, mmio_read_32(DIAG_MIPS_N) + 1);
 	mmio_write_32(DIAG_MIPS_LAST, p[0] | p[1] << 8 | p[2] << 16 |
 	              (uint32_t)p[3] << 24);
-	/* The aux block has no clock before the first ResetEDIDModule. */
-	if (len >= 3 && p[0] == 0x16 && p[1] < PORTS &&
-	    (mmio_read_32(SH_STATUS) & ST_EDID_MODULE)) {	/* 0x12330 */
+	if (len >= 3 && p[0] == 0x16 && p[1] < PORTS) {	/* 0x12330 */
 		uint8_t port = p[1], action = p[2];
 
+		/* no aux clock before the first ResetEDIDModule */
+		if (!aux_ok(4))
+			return;
 		if (action == 1)
 			sh_wr8(SH_HPD_COUNTER + port, sh_rd8(SH_HPD_COUNTER + port) + 1);
 		else if (action == 2 || action == 3)

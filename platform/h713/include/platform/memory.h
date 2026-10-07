@@ -185,7 +185,7 @@
 #define H713_ERR_TXQ_FULL    2
 #define H713_ERR_SB_DROP     3
 #define H713_ERR_CPU_OP      4
-#define H713_ERR_AUX_CLOCK   5
+#define H713_ERR_AUX_CLOCK   5  /* detail 1 publish, 2 HPD pin, 3 RequestEDID, 4 MIPS */
 #define H713_ERR_DRAM_PHY    6
 #define H713_ERR_POLL        7
 #define H713_ERR_RESTART     8
@@ -204,7 +204,7 @@
 #define H713_CNT_ARM_UNKNOWN (H713_K_CNT0 + 2) /* ARM type, sub-command, no answer */
 #define H713_CNT_TXQ_FULL    (H713_K_CNT0 + 3) /* tx queue full, answer lost */
 #define H713_CNT_STALE_REPLY (H713_K_CNT1 + 0) /* reply nobody read */
-#define H713_CNT_MIPS_DROP   (H713_K_CNT1 + 1) /* DispMips words or frames dropped */
+#define H713_CNT_MIPS_DROP   (H713_K_CNT1 + 1) /* DispMips words/frames dropped, aux unclocked */
 #define H713_CNT_MIPS_17     (H713_K_CNT1 + 2) /* DispMips ResetEDIDModule */
 #define H713_CNT_MIPS_16     (H713_K_CNT1 + 3) /* DispMips PullHotPlug */
 #define H713_CNT_TAKEN       (H713_K_CNT2 + 0) /* requests taken */
