@@ -103,6 +103,27 @@ config H713_DEEP_VDD_SYS
 		27; TF-A and the kernel always refuse such an image. Only for
 		the trace comparison with the blob.
 
+config H713_SLEEP_NET
+	bool "Sleep net: the R_WDOG armed from the standby request to Linux's confirm"
+	depends on DEBUG_RECORD_STEPS && WATCHDOG_SUN50I_H713_WDT
+	help
+		crust arms the R_WDOG when it takes the kernel's net request
+		(0x25/0x26 with NET_REQ), feeds it at standby step boundaries
+		and at most once a second in its loops, never inside a step,
+		and disarms it on the kernel's confirm after the resume. A
+		hang anywhere in between resets the SoC. The R_WDOG's feed,
+		clock, interval and reset scope are unmeasured: not for a
+		release before stage S0. Build word bit 29.
+
+config H713_SLEEP_NET_INTERVAL
+	hex "R_WDOG interval code (MODE bits 7..4)"
+	depends on H713_SLEEP_NET
+	default 0xb
+	range 0x1 0xb
+	help
+		0xb is 16 s on the SoC watchdog (measured); what it gives on
+		the R_WDOG is to be measured in stage S0b. BUILD2 23..16.
+
 config H713_TEST
 	bool "Test build (build word bit 30, never for a release)"
 	help

@@ -16,12 +16,14 @@ choice
 		The watchdog also services user-requested system resets.
 
 config WATCHDOG_SUN50I_H713_WDT
-	bool "R_WDOG of the H713 (reset only, never armed)"
+	bool "R_WDOG of the H713 (reset; armed only for the sleep net)"
 	depends on PLATFORM_H713
 	help
-		sun50iw12 layout with the key 0x16aa. The feed sequence is
-		unknown and the vendor firmware never arms it, so this
-		driver only provides the system reset.
+		sun55i-a523 layout with the keys 0x16aa (CFG, MODE) and
+		0xa57 (feed on CTRL +0x0c), measured on the SoC watchdog
+		0x02051000; on the R_WDOG only CFG and MODE are known from
+		the vendor firmware, which never arms it. The driver never
+		arms it while awake; H713_SLEEP_NET arms it for a standby.
 
 config WATCHDOG_SUN6I_A31_WDT
 	bool "Watchdog (R_WDOG)"

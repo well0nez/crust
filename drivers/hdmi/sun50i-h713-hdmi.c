@@ -69,6 +69,11 @@
 #else
 #define BUILD2_DRAM_MHZ 0
 #endif
+#if CONFIG(H713_SLEEP_NET)
+#define BUILD2_NET_CODE CONFIG_H713_SLEEP_NET_INTERVAL
+#else
+#define BUILD2_NET_CODE 0
+#endif
 
 /* Diagnostic words (platform/memory.h), kept across firmware restarts. */
 #define DIAG_LEWIN_EN   (H713_DIAG_BASE + 0x00)    /* written by start.S */
@@ -840,10 +845,12 @@ h713_init(void)
 	              (uint32_t)CONFIG(H713_IR_WAKE_NECX) << 26 |
 	              (uint32_t)CONFIG(H713_DEEP_VDD_SYS) << 27 |
 	              (uint32_t)CONFIG(H713_DEEP_PLL_LDO) << 28 |
+	              (uint32_t)CONFIG(H713_SLEEP_NET) << 29 |
 	              (uint32_t)CONFIG(H713_TEST) << 30);
 	mmio_write_32(H713_K_COMPAT, H713_COMPAT);
 	mmio_write_32(H713_K_BUILD2, (BUILD2_DRAM_MHZ & 0xfff) |
-	              (CONFIG_H713_BOARD_ID & 0xf) << 12);
+	              (CONFIG_H713_BOARD_ID & 0xf) << 12 |
+	              (BUILD2_NET_CODE & 0xff) << 16);
 	portmap_init();
 	/*
 	 * Load-bearing: system.c puts its own msgbox reference at every
