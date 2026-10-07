@@ -52,12 +52,20 @@
  * display MIPS, +0x24 the first four bytes of the last one, +0x28 frames
  * from the ARM with a type other than 0, +0x2c the last standby step
  * (common/debug/steps.c, 0 = none), +0x30 the last exception (number << 24
- * | pc), +0x34..+0x3c see below.
+ * | pc), +0x34 milliseconds counted asleep in the last standby (TF-A puts
+ * the system counter forward by them when the counter was reset), +0x38
+ * the armed wake timer in milliseconds (0x26 type 3; 0 = none) - here, not
+ * in .bss, so a firmware restart while asleep still ends the standby, with
+ * a reset - and +0x3c the build: image size in bits 19..0, bit 24 DRAM
+ * self-refresh, bit 25 deep sleep, bit 26 IR wake codes.
  */
-#define H713_DIAG_BASE      (H713_SHARED_BASE + 0x200)
-#define H713_DIAG_STEP      (H713_DIAG_BASE + 0x2c)
-#define H713_DIAG_EXCEPTION (H713_DIAG_BASE + 0x30)
-#define H713_DIAG_LIMIT     (H713_SHARED_BASE + 0x240)
+#define H713_DIAG_BASE       (H713_SHARED_BASE + 0x200)
+#define H713_DIAG_STEP       (H713_DIAG_BASE + 0x2c)
+#define H713_DIAG_EXCEPTION  (H713_DIAG_BASE + 0x30)
+#define H713_DIAG_SLEPT_MS   (H713_DIAG_BASE + 0x34)
+#define H713_DIAG_WAKE_TIMER (H713_DIAG_BASE + 0x38)
+#define H713_DIAG_BUILD      (H713_DIAG_BASE + 0x3c)
+#define H713_DIAG_LIMIT      (H713_SHARED_BASE + 0x240)
 
 #define STACK_SIZE     0x00000400
 

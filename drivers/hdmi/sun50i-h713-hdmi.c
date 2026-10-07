@@ -37,6 +37,7 @@
 #include <platform/devices.h>
 #include <platform/memory.h>
 #include <platform/prcm.h>
+#include <platform/time.h>
 
 /* ---- the contract page (AR100 view; ARM = + SRAM_A2_OFFSET) ------------- */
 #define SH_MAGIC        (H713_SHARED_BASE + 0x000) /* "H713" as ARM reads it */
@@ -167,7 +168,7 @@ static uint8_t  pump_state, pump_len, pump_idx, pump_type;
 static uint8_t  sb_n, sb_count;
 static uint32_t sb_hdr, sb_data[8];
 static uint32_t hpd_deadline, key_deadline, ms_deadline;
-static uint32_t wake_timer_ms, wake_elapsed_ms;
+static bool     wake_armed;	/* .bss: false again after a firmware restart */
 static uint8_t  key_low;
 static uint32_t pl_cfg_saved;
 /*
@@ -635,10 +636,11 @@ sb_frame(void)
 	}
 	case TYPE_WAKE_SET:	/* key and IR are armed without it; type 3 = timer */
 		if (sb_count >= 1 && sb_data[0] >> 30 == WAKE_SRC_TIMER)
-			wake_timer_ms = sb_data[0] & 0x3fffffff;
+			mmio_write_32(H713_DIAG_WAKE_TIMER,
+			              sb_data[0] & 0x3fffffff);
 		sb_reply(type, 0, NULL, 0); break;
 	case TYPE_WAKE_CLR:
-		wake_timer_ms = 0;
+		mmio_write_32(H713_DIAG_WAKE_TIMER, 0);
 		sb_reply(type, 0, NULL, 0); break;
 	default:
 		sb_reply(type, RESULT_UNKNOWN, NULL, 0); break;
@@ -756,8 +758,9 @@ h713_suspend_prepare(void)
 		gpio_set_value(&led_blue, false);
 	key_low = 0;
 	key_deadline = timeout_set(KEY_POLL_US);
-	wake_elapsed_ms = 0;
 	ms_deadline = timeout_set(1000);
+	wake_armed = true;
+	mmio_write_32(H713_DIAG_SLEPT_MS, 0);
 	mmio_write_32(SH_WAKE, 0);
 	sh_status(ST_ASLEEP, 0);
 }
@@ -767,12 +770,28 @@ h713_wake_poll(void)
 {
 	bool level;
 
-	if (wake_timer_ms && timeout_expired(ms_deadline)) {
-		ms_deadline = timeout_set(1000);
-		if (++wake_elapsed_ms >= wake_timer_ms) {
-			mmio_write_32(SH_WAKE, WAKE_TIMER);
-			return WAKE_TIMER;
-		}
+	uint32_t timer = mmio_read_32(H713_DIAG_WAKE_TIMER);
+
+	/*
+	 * After a firmware restart while asleep (system.c goes to SS_OFF) the
+	 * deadlines are gone with .bss; without fresh ones a deadline in the
+	 * other half of the tick timer would not expire for up to 89 s.
+	 */
+	if (!wake_armed) {
+		key_deadline = timeout_set(KEY_POLL_US);
+		ms_deadline  = timeout_set(1000);
+		wake_armed   = true;
+	}
+	/* Milliseconds asleep, stepped from the deadline so nothing drifts;
+	 * a long pass is caught up. */
+	while (timeout_expired(ms_deadline)) {
+		ms_deadline += CPUCLK_kHz;
+		mmio_write_32(H713_DIAG_SLEPT_MS,
+		              mmio_read_32(H713_DIAG_SLEPT_MS) + 1);
+	}
+	if (timer && mmio_read_32(H713_DIAG_SLEPT_MS) >= timer) {
+		mmio_write_32(SH_WAKE, WAKE_TIMER);
+		return WAKE_TIMER;
 	}
 
 	if (timeout_expired(key_deadline)) {
@@ -818,6 +837,7 @@ h713_resume_done(void)
 	mmio_write_32(R_PIO_PL_DRV1, pl_drv1_saved);
 	mmio_write_32(R_PIO_PL_CFG0, pl_cfg0_saved);
 	sh_status(0, ST_ASLEEP);
-	wake_timer_ms = 0;	/* one standby at a time, as the vendor's 0x26 */
+	/* one standby per arming, as the vendor's 0x26 */
+	mmio_write_32(H713_DIAG_WAKE_TIMER, 0);
 	info("H713: resumed, wake word %x", mmio_read_32(SH_WAKE));
 }
