@@ -15,6 +15,7 @@
 #include <clock/ccu.h>
 #include <hdmi/sun50i-h713-hdmi.h>
 #include <platform/devices.h>
+#include <platform/memory.h>
 #include <platform/prcm.h>
 
 #include "ccu.h"
@@ -191,6 +192,21 @@ cpus_clk_osc24m(void)
 #define RTC_LOSC_CTRL   (DEV_RTC + 0x000)
 #define RTC_LOSC_OUT    (DEV_RTC + 0x060)
 #define KEY_16AA        0x16aa0000
+#define LOSC_EXT_EN     BIT(4)  /* the 32k crystal's oscillator on */
+#define LOSC_EXT_SEL    BIT(0)  /* LOSC from the crystal, not the RC */
+/* LOSC_CTRL after the resume, for the device test (0033; behind the
+ * power key words of sun50i-h713-hdmi.c, +0x24c..+0x25b). */
+#define LOSC_SEEN       (H713_SHARED_BASE + 0x25c)
+
+/*
+ * What Linux had before the sleep. The blob turns the 32k crystal on and
+ * selects it on the way back; on the HY310 Linux never did (07.10.2026:
+ * LOSC_CTRL 0x8000 - the internal RC, the crystal off; the DT rtc node has
+ * no clocks), and nobody knows whether a crystal is fitted. A dead LOSC
+ * would stop the RTC and the EINT sampler that clocks the power key and
+ * IR edges. So the resume puts back what the suspend found.
+ */
+static uint32_t losc_saved, losc_out_saved;
 
 /* 0xcdd8's table 0x17124: the clocks it moves to source 0, divider 1. */
 static const uintptr_t root_clk[8] = {
@@ -273,6 +289,8 @@ r_ccu_suspend(uint8_t depth UNUSED)
 	udelay(100);
 	plls_off();                                             /* 0xdd40 */
 	udelay(100);
+	losc_saved     = mmio_read_32(RTC_LOSC_CTRL);
+	losc_out_saved = mmio_read_32(RTC_LOSC_OUT);
 	v = (mmio_read_32(RTC_LOSC_CTRL) & ~BIT(0)) | KEY_16AA; /* 0xdd50 */
 	mmio_write_32(RTC_LOSC_CTRL, v);
 	mmio_write_32(RTC_LOSC_CTRL, v);
@@ -309,17 +327,24 @@ r_ccu_resume(void)
 	mmio_write_32(PLL_CTRL_REG1, v);
 	mmio_write_32(PLL_CTRL_REG1, v);
 	udelay(100);
-	/* 0xde24: the blob ORs 0x00a70010 -- key 0x00a7, not 0x16aa -- into
-	 * LOSC_CTRL; kept as it is, it is what wakes stock up. */
-	v = mmio_read_32(RTC_LOSC_CTRL) | 0x00a70010;
+	/* 0xde24/0xde44/0xde68 turn the crystal on, select it and gate the
+	 * 32k output on; here the state from before the sleep comes back
+	 * instead (see losc_saved): first the oscillator, then the source.
+	 * A board whose Linux runs LOSC from the crystal gets the blob's 1 us
+	 * between the two - the crystal kept running only if the suspend left
+	 * it on, which it does not; not measured, the HY310 has both bits 0. */
+	v = (mmio_read_32(RTC_LOSC_CTRL) & ~LOSC_EXT_EN) |
+	    (losc_saved & LOSC_EXT_EN) | KEY_16AA;
 	mmio_write_32(RTC_LOSC_CTRL, v);
 	mmio_write_32(RTC_LOSC_CTRL, v);
 	udelay(1);
-	v = mmio_read_32(RTC_LOSC_CTRL) | KEY_16AA | BIT(0);    /* 0xde44 */
+	v = (mmio_read_32(RTC_LOSC_CTRL) & ~LOSC_EXT_SEL) |
+	    (losc_saved & LOSC_EXT_SEL) | KEY_16AA;
 	mmio_write_32(RTC_LOSC_CTRL, v);
 	mmio_write_32(RTC_LOSC_CTRL, v);
 	udelay(1);
-	mmio_set_32(RTC_LOSC_OUT, BIT(0));                      /* 0xde68 */
+	mmio_clrset_32(RTC_LOSC_OUT, BIT(0), losc_out_saved & BIT(0));
+	mmio_write_32(LOSC_SEEN, mmio_read_32(RTC_LOSC_CTRL));
 	udelay(100);
 	plls_restore();                                         /* 0xde7c */
 	udelay(100);
