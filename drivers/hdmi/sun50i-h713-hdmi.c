@@ -385,10 +385,22 @@ publish(void)
 		for (int i = 0; i < EDID_BLOCK; ++i)
 			blk[i] = src[i];
 		phys = sh_rd8(SH_PORTMAP + 8 * port + REC_PHYS);
-		/* CEA-861 data block collection: tag 3 with IEEE 00 0c 03. */
-		for (int i = 128 + 4; i < 128 + blk[128 + 2] && i < 255;) {
+		/*
+		 * CEA-861 data block collection: tag 3 with IEEE 00 0c 03. It
+		 * ends at the DTD offset (byte 2 of the extension, whose tag
+		 * is 2) and before the checksum; a block that runs past that
+		 * end is not followed, so a malformed upload never reaches
+		 * beyond blk[] (PRUEFUNG5 F1). With len >= 5 inside the end,
+		 * the byte written, i + 4, lies inside it too.
+		 */
+		int end = 128 + blk[128 + 2] < 255 ? 128 + blk[128 + 2] : 255;
+
+		for (int i = 128 + 4; blk[128] == 0x02 && blk[128 + 2] >= 4 &&
+		     i < end;) {
 			uint8_t tag = blk[i] >> 5, len = blk[i] & 0x1f;
 
+			if (i + 1 + len > end)
+				break;
 			if (tag == 3 && len >= 5 && blk[i + 1] == 0x03 &&
 			    blk[i + 2] == 0x0c && blk[i + 3] == 0x00)
 				blk[i + 4] = phys;
