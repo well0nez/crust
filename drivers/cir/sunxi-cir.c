@@ -81,6 +81,20 @@ sunxi_cir_probe(const struct device *dev)
 	mmio_write_32(self->regs + CIR_RXCFG,
 	              CONFIG(CIR_USE_OSC24M) ? 0x00001404 : 0x010f0310);
 
+	/*
+	 * Start each suspend with a fresh decoder and an empty FIFO: what is
+	 * left from the last one, or from Linux using the receiver, is not
+	 * the start of a frame. The FIFO holds 64 samples at most.
+	 */
+	state->dec_ctx.buffer  = 0;
+	state->dec_ctx.counter = 0;
+	state->dec_ctx.bits    = 0;
+	state->dec_ctx.state   = 0;
+	state->dec_ctx.pulse   = 0;
+	state->dec_ctx.width   = 0;
+	for (int n = 0; n < 64 && mmio_read_32(self->regs + CIR_RXSTA) >> 8; ++n)
+		mmio_read_32(self->regs + CIR_RXFIFO);
+
 	/* Enable CIR module. */
 	mmio_write_32(self->regs + CIR_RXCTL, 0x33);
 
