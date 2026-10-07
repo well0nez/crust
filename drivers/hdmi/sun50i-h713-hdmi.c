@@ -837,6 +837,9 @@ h713_resume_done(void)
 	mmio_write_32(R_PIO_PL_DRV1, pl_drv1_saved);
 	mmio_write_32(R_PIO_PL_CFG0, pl_cfg0_saved);
 	sh_status(0, ST_ASLEEP);
+	/* The HPD tick did not run asleep: a deadline from before the standby
+	 * would not expire for up to 89 s after a long one. */
+	hpd_deadline = timeout_set(HPD_TICK_US);
 	/* one standby per arming, as the vendor's 0x26 */
 	mmio_write_32(H713_DIAG_WAKE_TIMER, 0);
 	info("H713: resumed, wake word %x", mmio_read_32(SH_WAKE));
