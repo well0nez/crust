@@ -36,6 +36,12 @@
 #define MS              CPUCLK_kHz      /* tick timer cycles per ms */
 #define FEED_MS         1000
 #define FAIL_WAIT_MS    2000            /* for a reset before the next path */
+/*
+ * The limit of a hardware poll in a standby step: what these polls wait
+ * for (self-refresh, a PHY calibration, a PLL lock, a power switch) takes
+ * microseconds on a working SoC, and the net's 16 s must not come first.
+ */
+#define POLL_LIMIT_MS   1000
 
 static uint32_t ms_next, feed_next;
 static bool     ms_armed;               /* .bss: false after a restart */
@@ -275,6 +281,13 @@ h713_restart_check(uint32_t exception)
 	if (n >= 3)
 		h713_fail(H713_CAUSE_LOOP, ph, exc);
 	mmio_write_32(H713_K_SB_STATE, (st & ~H713_SB_RESTARTS) | n << 6);
+}
+
+void
+h713_poll_limit(uint32_t start, uint8_t id, uint32_t value)
+{
+	if (cycle_counter_read() - start >= POLL_LIMIT_MS * MS)
+		h713_fail(H713_CAUSE_POLL, id, value);
 }
 
 static void

@@ -3,12 +3,14 @@
  * SPDX-License-Identifier: BSD-3-Clause OR GPL-2.0-only
  */
 
+#include <counter.h>
 #include <delay.h>
 #include <mmio.h>
 #include <scpi_protocol.h>
 #include <stdbool.h>
 #include <util.h>
 #include <stdint.h>
+#include <hdmi/sun50i-h713-hdmi.h>
 #include <platform/cpucfg.h>
 #include <platform/memory.h>
 
@@ -94,11 +96,13 @@ css_suspend_css(uint32_t new_state)
 	udelay(1000);                                           /* 0x4ba4 */
 	mmio_set_32(CPU_UNK_REG(0), CPU_UNK_REG_CLAMP);         /* 0x5598(1, 1) */
 	if (mmio_read_32(C0_CPUn_PWR_SWITCH_REG(0)) != 0xff) {  /* 0x43f0(0, 0, 0) */
+		uint32_t start, v;
+
 		mmio_write_32(C0_CPUn_PWR_SWITCH_REG(0), 0xff);
 		udelay(30);
-		while (mmio_read_32(C0_CPUn_PWR_SWITCH_REG(0)) != 0xff) {
-			/* 0x4528 */
-		}
+		start = cycle_counter_read();
+		while ((v = mmio_read_32(C0_CPUn_PWR_SWITCH_REG(0))) != 0xff)
+			h713_poll_limit(start, H713_POLL_CPU_OFF, v); /* 0x4528 */
 	}
 }
 
@@ -113,17 +117,21 @@ css_resume_css(uint32_t old_state)
 
 	/* 0x43f0(0, 0, 1): the core 0 power switch, unless it is on */
 	if (mmio_read_32(C0_CPUn_PWR_SWITCH_REG(0)) != 0) {
+		uint32_t start, v;
+
 		for (uint32_t i = 0; i < ARRAY_SIZE(ladder); ++i) {
 			mmio_write_32(C0_CPUn_PWR_SWITCH_REG(0), ladder[i]);
 			udelay(wait_us[i]);
 		}
 		mmio_write_32(C0_CPUn_PWR_SWITCH_REG(0), 0);
 		udelay(10);                                     /* 0x44ac */
-		while (mmio_read_32(C0_CPUn_PWR_SWITCH_REG(0)) != 0)
+		start = cycle_counter_read();
+		while ((v = mmio_read_32(C0_CPUn_PWR_SWITCH_REG(0))) != 0) {
+			h713_poll_limit(start, H713_POLL_CPU_ON, v);
 			udelay(20);
-		while (mmio_read_32(C0_CPUn_PWR_SWITCH_REG(0)) != 0) {
-			/* 0x44c4 */
 		}
+		while ((v = mmio_read_32(C0_CPUn_PWR_SWITCH_REG(0))) != 0)
+			h713_poll_limit(start, H713_POLL_CPU_ON, v); /* 0x44c4 */
 	}
 	mmio_clr_32(CPU_UNK_REG(0), CPU_UNK_REG_CLAMP);         /* 0x5598(1, 0) */
 	mmio_write_32(CPU_SYS_RESET_REG, CPU_SYS_RESET);        /* 0x4d14 */

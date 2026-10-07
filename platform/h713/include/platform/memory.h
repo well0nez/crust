@@ -171,6 +171,14 @@
 #define H713_CAUSE_LOOP      7  /* ERR 8, detail phase, data exception word */
 #define H713_CAUSE_PLL_LOCK  9  /* ERR 10, deep stage only */
 
+/* The bounded polls of cause 4 (ERR_DETAIL 23..16), data the value read. */
+#define H713_POLL_DRAM_MODE  1  /* STATR operating mode (dram.c) */
+#define H713_POLL_DRAM_IDONE 2  /* PGSR0 idone after a PIR trigger */
+#define H713_POLL_DRAM_PLL   3  /* PLL_DDR0 lock */
+#define H713_POLL_DRAM_STATR 4  /* STATR bit 0 at the end of the exit */
+#define H713_POLL_CPU_OFF    5  /* core 0 power switch off (css.c) */
+#define H713_POLL_CPU_ON     6  /* core 0 power switch on */
+
 /* ERR bits; fatal ones (4, 6..10) come with a clean reset. */
 #define H713_ERR_KEY_PIN     0
 #define H713_ERR_CIR         1

@@ -34,12 +34,15 @@
  * same register model and compares the access lists.
  */
 
+#include <counter.h>
 #include <debug.h>
 #include <dram.h>
 #include <mmio.h>
 #include <stdint.h>
 #include <util.h>
+#include <hdmi/sun50i-h713-hdmi.h>
 #include <platform/devices.h>
+#include <platform/memory.h>
 #include <platform/prcm.h>
 
 #if CONFIG(H713_DRAM_SELF_REFRESH)
@@ -119,20 +122,32 @@ static const uint16_t tmg_reg[10] = {
 	0x058, 0x05c, 0x060, 0x064, 0x068, 0x06c, 0x078, 0x080, 0x050, 0x054,
 };
 
+/*
+ * Until (@reg & @mask) == @want, one read per pass as the blob polls; the
+ * limit counts on the tick timer, an SPR, so the register accesses stay
+ * the blob's. Past it, the clean reset with poll @id and the last value.
+ */
+static void
+poll_reg(uint8_t id, uintptr_t reg, uint32_t mask, uint32_t want)
+{
+	uint32_t start = cycle_counter_read(), v;
+
+	while (((v = mmio_read_32(reg)) & mask) != want)
+		h713_poll_limit(start, id, v);
+}
+
 static void
 poll_op_mode(uint32_t mode)
 {
-	while ((mmio_read_32(STATR) & STATR_OP_MODE) != mode) {
-		/* 0x14480, 0x13e84, 0x13ec4 */
-	}
+	/* 0x14480, 0x13e84, 0x13ec4 */
+	poll_reg(H713_POLL_DRAM_MODE, STATR, STATR_OP_MODE, mode);
 }
 
 static void
 poll_pgsr0_idone(void)
 {
-	while (!(mmio_read_32(PGSR0) & BIT(0))) {
-		/* 0x13e10, 0x13e3c, 0x13f24 */
-	}
+	/* 0x13e10, 0x13e3c, 0x13f24 */
+	poll_reg(H713_POLL_DRAM_IDONE, PGSR0, BIT(0), BIT(0));
 }
 
 /* 0x13398: nanoseconds to clock cycles, rounded up. */
@@ -154,9 +169,7 @@ pll_ddr_init(void)
 	              0xc0000000 | (n - 1) << 8);               /* 0x1361c */
 	mmio_clr_32(PLL_DDR0, BIT(29));                           /* 0x13630 */
 	mmio_set_32(PLL_DDR0, BIT(29));                           /* 0x13640 */
-	while (!(mmio_read_32(PLL_DDR0) & BIT(28))) {
-		/* 0x13644: lock */
-	}
+	poll_reg(H713_POLL_DRAM_PLL, PLL_DDR0, BIT(28), BIT(28)); /* 0x13644: lock */
 	/* 0x1365c: tpr13 bit 23 selects the sigma-delta path 0x1350c; the
 	 * boards this port knows leave it clear. */
 	mmio_set_32(PLL_DDR0, BIT(27));                           /* 0x13698 */
@@ -340,9 +353,7 @@ mctl_resume(void)
 		poll_pgsr0_idone();
 	}
 	pir = !((mmio_read_32(PGSR0) >> 20) & 0xff);              /* 0x13f44: no error */
-	while (!(mmio_read_32(STATR) & BIT(0))) {
-		/* 0x13f60 */
-	}
+	poll_reg(H713_POLL_DRAM_STATR, STATR, BIT(0), BIT(0));    /* 0x13f60 */
 	mmio_set_32(CTL(0x08c), BIT(31));                         /* 0x13f8c */
 	mmio_clr_32(CTL(0x08c), BIT(31));                         /* 0x13fa4 */
 	mmio_set_32(COM(0x014), BIT(31));                         /* 0x13fb8 */

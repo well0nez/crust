@@ -54,6 +54,9 @@ void h713_sleep_event(uint8_t ev);
 void h713_sleep_step(void);
 /** Awake and asleep loops: time, feed, confirm, budgets. */
 void h713_net_poll(void);
+/** A hardware poll since @start not done yet: past its limit the clean
+ * reset with cause 4, poll @id (H713_POLL_*) and the @value it read. */
+void h713_poll_limit(uint32_t start, uint8_t id, uint32_t value);
 
 #else
 
@@ -80,6 +83,8 @@ static inline void h713_sleep_request(void) {}
 static inline void h713_sleep_event(uint8_t ev UNUSED) {}
 static inline void h713_sleep_step(void) {}
 static inline void h713_net_poll(void) {}
+static inline void h713_poll_limit(uint32_t start UNUSED, uint8_t id UNUSED,
+                                   uint32_t value UNUSED) {}
 
 #endif
 
