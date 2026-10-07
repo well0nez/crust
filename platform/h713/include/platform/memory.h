@@ -50,10 +50,14 @@
  * last main loop pass, +0x14 number of h713_init() runs, +0x18/+0x1c
  * R_INTC +0x80/+0x88 as found at start, +0x20 frames received from the
  * display MIPS, +0x24 the first four bytes of the last one, +0x28 frames
- * from the ARM with a type other than 0, +0x2c..+0x3c reserved.
+ * from the ARM with a type other than 0, +0x2c the last standby step
+ * (common/debug/steps.c, 0 = none), +0x30 the last exception (number << 24
+ * | pc), +0x34..+0x3c see below.
  */
-#define H713_DIAG_BASE    (H713_SHARED_BASE + 0x200)
-#define H713_DIAG_LIMIT   (H713_SHARED_BASE + 0x240)
+#define H713_DIAG_BASE      (H713_SHARED_BASE + 0x200)
+#define H713_DIAG_STEP      (H713_DIAG_BASE + 0x2c)
+#define H713_DIAG_EXCEPTION (H713_DIAG_BASE + 0x30)
+#define H713_DIAG_LIMIT     (H713_SHARED_BASE + 0x240)
 
 #define STACK_SIZE     0x00000400
 
