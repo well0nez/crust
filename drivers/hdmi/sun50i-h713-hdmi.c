@@ -555,7 +555,9 @@ group_15(uint8_t hi)
 		 * read and opens again after the four frames (0x11cac(7, 0) and
 		 * (7, 1), the latter only with the EDID ready). With the gate
 		 * open the RAM belongs to the DDC side and reads as zero, from
-		 * the AR100 and from the ARM alike (HY310, 07.10.2026).
+		 * the AR100 and from the ARM alike (HY310, 07.10.2026). It
+		 * opens again only on an EDID publish() put out (the gate
+		 * byte), not on the empty store after a ResetEDIDModule.
 		 */
 		aux_gate(0x7, false);
 		for (uint8_t idx = 0; idx < 4; ++idx) {
@@ -565,7 +567,7 @@ group_15(uint8_t hi)
 			frame[69] = 0;
 			reply_frame(frame, 72);
 		}
-		if (sh_rd8(SH_EDID_READY))
+		if (sh_rd8(SH_EDID_READY) && sh_rd8(SH_EDID_GATE))
 			aux_gate(0x7, true);
 	}
 }
