@@ -712,16 +712,21 @@ sb_frame(void)
 		info("H713: startup notify acknowledged");
 		break;
 	case TYPE_CPU_OP:	/* {mpidr, entrypoint, cpu, cluster, system} */
-		if (sb_count < 2 || sb_data[1] == 0) {
-			sb_reply(type, RESULT_UNKNOWN, NULL, 0);
-			break;
-		}
+		/*
+		 * TF-A asks for no answer (attr 0) and parks the core in WFI:
+		 * a request crust cannot carry out - too short, no entry, not
+		 * core 0 (the cluster would stay up and never suspend), or one
+		 * the CSS refuses - ends in the clean reset, not in a hang.
+		 */
+		if (sb_count < 2 || sb_data[1] == 0 || (sb_data[0] & 0xff))
+			h713_fail(H713_CAUSE_CPU_OP, sb_count, sb_data[0]);
 		info("H713: cpu op req, warm entry %p", (void *)sb_data[1]);
 		h713_sleep_event(H713_EV_CPU_OP);
 		css_set_warm_entry(sb_data[1], 0);
 		udelay(CPU_OP_DELAY_US);
-		css_set_power_state(0, sb_data[0] & 0xf, SCPI_CSS_OFF,
-		                    SCPI_CSS_OFF, SCPI_CSS_OFF);
+		if (css_set_power_state(0, 0, SCPI_CSS_OFF, SCPI_CSS_OFF,
+		                        SCPI_CSS_OFF) != SCPI_OK)
+			h713_fail(H713_CAUSE_CPU_OP, sb_count, sb_data[0]);
 		break;
 	case TYPE_RESTORE: {	/* answered with the wake word */
 		/*
