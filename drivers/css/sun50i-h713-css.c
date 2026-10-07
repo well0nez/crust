@@ -10,6 +10,7 @@
 #include <util.h>
 #include <stdint.h>
 #include <platform/cpucfg.h>
+#include <platform/memory.h>
 
 #include "css.h"
 
@@ -35,6 +36,21 @@
 #define CPUCFG_14               (DEV_CPUCFG + 0x0014)
 
 static uint32_t warm_entry_lo, warm_entry_hi;
+
+/*
+ * The cluster down resets the CPU subsystem (CPU_SYS_RESET = 0), and with it,
+ * as far as the HY310 shows (07.10.2026), the cores' start addresses: after
+ * the first standby CPU1..3 did not come back ("failed to come online") and
+ * the system stopped. TF-A programs ALT_RVBAR for all cores once at boot
+ * (sunxi_pm.c plat_setup_psci_ops) and its cpu_on does not do it again; the
+ * blob restores only core 0, since the vendor BL31 does the rest. So the
+ * four start addresses are saved before the cluster goes down and written
+ * back after it is up again. What the cluster up left in them is kept for
+ * the record at H713_SHARED_BASE + 0x240 (cores 1..3, low words), so the
+ * next run shows whether the reset cleared them.
+ */
+#define RVBAR_SEEN_BASE         (H713_SHARED_BASE + 0x240)
+static uint32_t rvbar_lo[MAX_CORES_PER_CLUSTER], rvbar_hi[MAX_CORES_PER_CLUSTER];
 
 void
 css_set_warm_entry(uint32_t lo, uint32_t hi)
@@ -64,6 +80,10 @@ css_suspend_css(uint32_t new_state)
 	if (new_state < SCPI_CSS_OFF)
 		return;
 
+	for (uint32_t n = 0; n < MAX_CORES_PER_CLUSTER; ++n) {
+		rvbar_lo[n] = mmio_read_32(ALT_RVBAR_LO_REG(n));
+		rvbar_hi[n] = mmio_read_32(ALT_RVBAR_HI_REG(n));
+	}
 	cluster_ctrl(false);                                    /* 0x4b38 */
 	mmio_write_32(C0_PWRON_RESET_REG, 0);                   /* 0x4b50 */
 	for (int n = MAX_CORES_PER_CLUSTER - 1; n >= 0; --n)   /* 0x4b5c.. */
@@ -113,6 +133,13 @@ css_resume_css(uint32_t old_state)
 		mmio_clr_32(C0_CPU_CTRL_REG(n), BIT(4));
 	mmio_clr_32(CPUCFG_14, BIT(0));                         /* 0x485c(0) */
 	cluster_ctrl(true);                                     /* 0x4968(1) */
+	for (uint32_t n = 1; n < MAX_CORES_PER_CLUSTER; ++n)
+		mmio_write_32(RVBAR_SEEN_BASE + 4 * (n - 1),
+		              mmio_read_32(ALT_RVBAR_LO_REG(n)));
+	for (uint32_t n = 0; n < MAX_CORES_PER_CLUSTER; ++n) {
+		mmio_write_32(ALT_RVBAR_LO_REG(n), rvbar_lo[n]);
+		mmio_write_32(ALT_RVBAR_HI_REG(n), rvbar_hi[n]);
+	}
 }
 
 void __attribute__((noipa))
