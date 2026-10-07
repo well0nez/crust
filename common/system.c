@@ -300,10 +300,14 @@ system_state_machine(uint32_t exception)
 			/* Acquire runtime-only devices. */
 			mailbox = device_get_or_null(&msgbox.dev);
 
+			/* Hand the pins back before the CSS runs (H713, 0032:
+			 * a strict order; the power key's latched edges are
+			 * cleared by then). */
+			h713_resume_done();
+
 			/* Resume execution on the CSS. */
 			record_step(STEP_RESUME_CSS);
 			css_resume();
-			h713_resume_done();
 
 			record_step(STEP_RESUME_COMPLETE);
 			debug("Resume complete!");

@@ -123,6 +123,17 @@
 #define R_PIO_PL_DRV1   (DEV_R_PIO + 0x018)    /* PL8..PL15 drive */
 #define R_PIO_PL_PULL0  (DEV_R_PIO + 0x024)    /* PL0..PL15 pull */
 #define R_PIO_EINT_STATUS (DEV_R_PIO + 0x214) /* PL bank (IRQ bank 0), W1C */
+#define R_PIO_EINT_DEB  (DEV_R_PIO + 0x218)    /* PL bank debounce clock */
+/*
+ * Behind the cores' start addresses (sun50i-h713-css.c, +0x240..+0x24b):
+ * the PL bank's EINT status at four points of h713_resume_done() (0032;
+ * read through /dev/mem): before the switch back, right after it, after
+ * the settle time, and one settle time after the clear.
+ */
+#define EINT_SEEN_BEFORE  (H713_SHARED_BASE + 0x24c)
+#define EINT_SEEN_SWITCH  (H713_SHARED_BASE + 0x250)
+#define EINT_SEEN_SETTLED (H713_SHARED_BASE + 0x254)
+#define EINT_SEEN_AFTER   (H713_SHARED_BASE + 0x258)
 
 #define BOP_MARKER      0xa5
 #define BOP_MAX_LEN     128
@@ -894,9 +905,29 @@ h713_wake_poll(void)
 	return 0;
 }
 
+/*
+ * The EINT edge detector samples the pin with the bank's debounce clock
+ * (PIO_INT_DEB: bit 0 LOSC 32 kHz or HOSC 24 MHz, bits 6..4 a 2^n divider).
+ * On the HY310 it reads 0 (measured 07.10.2026; Linux leaves it alone
+ * without "input-debounce"): one sample every 30.5 us. An edge from the
+ * mux switch reaches the status register only with the next samples, so
+ * a clear right after the switch comes too early. Eight samples, at least
+ * 1 ms.
+ */
+static uint32_t
+eint_settle_us(void)
+{
+	uint32_t deb = mmio_read_32(R_PIO_EINT_DEB);
+	uint32_t us  = 8 * (((deb & BIT(0)) ? 1U : 31U) << ((deb >> 4) & 0x7));
+
+	return us < 1000 ? 1000 : us;
+}
+
 void
 h713_resume_done(void)
 {
+	const uint32_t key_bit = BIT(CONFIG_H713_POWER_KEY_PIN);
+
 	gpio_set_value(&led_blue, true);
 	gpio_set_value(&led_red, false);
 	gpio_put(&led_blue);
@@ -909,16 +940,29 @@ h713_resume_done(void)
 	mmio_write_32(R_PIO_PL_PULL0, pl_pull0_saved);
 	mmio_write_32(R_PIO_PL_DRV0, pl_drv0_saved);
 	mmio_write_32(R_PIO_PL_DRV1, pl_drv1_saved);
-	mmio_write_32(R_PIO_PL_CFG0, pl_cfg0_saved);
 	/*
-	 * Back on its EINT function, the power key may latch the edge of the
-	 * mux switch. gpio-keys turns any interrupt of a wakeup key that comes
-	 * in while it is suspended into a key press ("simulate wakeup key
-	 * press"), and logind powers the box off: on the HY310 (07.10.2026,
-	 * run B1) the box shut down 0.2 s after a timer wake. The latched bit
-	 * is cleared before Linux gets its interrupts back.
+	 * gpio-keys turns any interrupt of a wakeup key that comes in while it
+	 * is suspended into a key press ("simulate wakeup key press"), and
+	 * logind powers the box off: on the HY310 (07.10.2026) the box shut
+	 * down 0.2 s after a timer wake (run B1), and runs B2 and C1 recorded
+	 * the press. PL4's mux switches latch edges: the one away from EINT at
+	 * the start of the standby, and the one back here, which reaches the
+	 * status register only with the next debounce samples - 0031 cleared
+	 * right after the switch, too early. So: clear what the standby left,
+	 * switch back, wait, clear, wait again and clear once more, all before
+	 * the cores run (Linux takes interrupts only some 30 ms later; the
+	 * call before css_resume() is for a strict order, not a cause).
 	 */
-	mmio_write_32(R_PIO_EINT_STATUS, BIT(CONFIG_H713_POWER_KEY_PIN));
+	mmio_write_32(EINT_SEEN_BEFORE, mmio_read_32(R_PIO_EINT_STATUS));
+	mmio_write_32(R_PIO_EINT_STATUS, key_bit);
+	mmio_write_32(R_PIO_PL_CFG0, pl_cfg0_saved);
+	mmio_write_32(EINT_SEEN_SWITCH, mmio_read_32(R_PIO_EINT_STATUS));
+	udelay(eint_settle_us());
+	mmio_write_32(EINT_SEEN_SETTLED, mmio_read_32(R_PIO_EINT_STATUS));
+	mmio_write_32(R_PIO_EINT_STATUS, key_bit);
+	udelay(eint_settle_us());
+	mmio_write_32(EINT_SEEN_AFTER, mmio_read_32(R_PIO_EINT_STATUS));
+	mmio_write_32(R_PIO_EINT_STATUS, key_bit);
 	sh_status(0, ST_ASLEEP);
 	woke = true;
 	/* The HPD tick did not run asleep: a deadline from before the standby
