@@ -182,7 +182,10 @@ system_state_machine(uint32_t exception)
 			 * the R_PIO state the CIR pin setup would change. */
 			h713_suspend_prepare();
 			cec = cec_get();
-			cir = cir_get();
+			/* With the H713's code list, h713_wake_poll() reads the
+			 * decoder itself; a second reader here would take every
+			 * other frame away from it. */
+			cir = CONFIG(H713_IR_WAKE_NECX) ? NULL : cir_get();
 
 			/* Configure the SoC for minimal power consumption. */
 			record_step(STEP_SUSPEND_DRAM);
