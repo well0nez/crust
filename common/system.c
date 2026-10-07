@@ -25,9 +25,11 @@
 #include <version.h>
 #include <watchdog.h>
 #include <clock/ccu.h>
+#include <dram/sun50i-h713-dram.h>
 #include <gpio/sunxi-gpio.h>
 #include <hdmi/sun50i-h713-hdmi.h>
 #include <msgbox/sunxi-msgbox.h>
+#include <platform/memory.h>
 
 #define NEXT_STATE (system_state + 2)
 
@@ -295,6 +297,12 @@ system_state_machine(uint32_t exception)
 			ccu_resume();
 			record_step(STEP_RESUME_DRAM);
 			dram_resume();
+#if CONFIG(PLATFORM_H713)
+			/* No mailbox and no CPU on a DRAM the PHY gave up on:
+			 * the clean reset, with PGSR0 for the next boot. */
+			if (h713_dram_error())
+				h713_fail(H713_CAUSE_DRAM, 0, h713_dram_error());
+#endif
 			dram_verify_checksum();
 
 			/* Release wakeup sources. */

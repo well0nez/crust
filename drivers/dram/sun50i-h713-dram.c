@@ -40,6 +40,7 @@
 #include <mmio.h>
 #include <stdint.h>
 #include <util.h>
+#include <dram/sun50i-h713-dram.h>
 #include <hdmi/sun50i-h713-hdmi.h>
 #include <platform/devices.h>
 #include <platform/memory.h>
@@ -116,6 +117,8 @@ static struct {
 	uint32_t r210[31];              /* +0xf0: 0x210..0x288 */
 	uint32_t dxgtr[4];              /* +0x17c: 0x33c + 0x80 n */
 } save;
+
+static uint32_t phy_error;      /* PGSR0 of the last exit, if it had errors */
 
 /* The timing registers the enter side saves and 0x13af8.. puts back. */
 static const uint16_t tmg_reg[10] = {
@@ -237,11 +240,12 @@ restore_phy(void)
 	mmio_set_32(PGCR0, BIT(26));                              /* 0x134fc */
 }
 
-/* 0x13884: the controller back up around the self-refreshing DRAM. */
+/* 0x13884: the controller back up around the self-refreshing DRAM; the
+ * blob returns "no error", this PGSR0 if it has error bits, else 0. */
 static uint32_t
 mctl_resume(void)
 {
-	uint32_t clk, ctrl, trefi, trfc, odt, mode, pir, v;
+	uint32_t clk, ctrl, trefi, trfc, odt, mode, pir, v, err;
 
 	mmio_clr_32(DRAM_BGR, BIT(0));                            /* 0x138b0 */
 	mmio_clr_32(DRAM_BGR, BIT(16));                           /* 0x138cc */
@@ -352,7 +356,8 @@ mctl_resume(void)
 		mmio_write_32(PIR, 0x401);
 		poll_pgsr0_idone();
 	}
-	pir = !((mmio_read_32(PGSR0) >> 20) & 0xff);              /* 0x13f44: no error */
+	v = mmio_read_32(PGSR0);                                  /* 0x13f44: no error */
+	err = ((v >> 20) & 0xff) ? v : 0;
 	poll_reg(H713_POLL_DRAM_STATR, STATR, BIT(0), BIT(0));    /* 0x13f60 */
 	mmio_set_32(CTL(0x08c), BIT(31));                         /* 0x13f8c */
 	mmio_clr_32(CTL(0x08c), BIT(31));                         /* 0x13fa4 */
@@ -361,7 +366,7 @@ mctl_resume(void)
 	if (mode == 1)                                            /* 0x13fe4 */
 		mmio_clrset_32(CTL(0x11c), 0xc0, 0x40);
 
-	return pir;
+	return err;
 }
 
 /* 0x142dc. noinline: one place in the image, for skripte/dram_trace.py */
@@ -418,7 +423,9 @@ dram_resume(void)
 		mmio_set_32(SYSCFG(0x160), BIT(1));
 		mmio_set_32(SYSCFG(0x160), BIT(0));
 	}
-	if (!mctl_resume()) {                                     /* 0x14148 */
+	phy_error = mctl_resume();
+	if (phy_error) {                                          /* 0x14148 */
+		/* system.c resets (h713_dram_error) before any CPU runs */
 		error("DRAM: PHY reports an error after standby");
 		return;
 	}
@@ -443,6 +450,12 @@ dram_resume(void)
 		mmio_clrset_32(CTL(0x07c), 0x000f0000, 0x00010000);
 }
 
+uint32_t
+h713_dram_error(void)
+{
+	return phy_error;
+}
+
 #else /* !CONFIG(H713_DRAM_SELF_REFRESH): light standby, the DRAM stays on */
 
 void
@@ -453,6 +466,12 @@ dram_suspend(void)
 void
 dram_resume(void)
 {
+}
+
+uint32_t
+h713_dram_error(void)
+{
+	return 0;
 }
 
 #endif
