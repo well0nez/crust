@@ -60,6 +60,27 @@ config H713_DEEP_SLEEP
 		the PLL LDO off, VDD_SYS reset and gating. Ported, offline
 		model only.
 
+config H713_DEEP_PLL_LDO
+	bool "Deep sleep: the PLL LDO off"
+	depends on H713_DEEP_SLEEP
+	default y
+	help
+		Blob 0xddbc down, 0xddec up. The HY310 has R_PRCM 0x244
+		bit 2 (CRYSTAL_EN) set (read 07.10.2026): the 24 MHz clock
+		may come through the PLL domain's pads, and upstream crust
+		turns that path off before the LDO (PRUEFUNG4). Off for the
+		first device run D1a.
+
+config H713_DEEP_VDD_SYS
+	bool "Deep sleep: VDD_SYS reset and AVCC/bit 8 gating"
+	depends on H713_DEEP_SLEEP
+	default y
+	help
+		Blob 0xdea8 down, 0xe3a8 up. It resets the main domain - CCU
+		gates, pin functions, UART0, the msgbox and the SoC watchdog
+		that the test runs use as their net - and mainline Linux
+		restores none of it (PRUEFUNG4 PD-1, PD-3). Off for D1a.
+
 if H713_DRAM_SELF_REFRESH
 
 config H713_DRAM_CLK

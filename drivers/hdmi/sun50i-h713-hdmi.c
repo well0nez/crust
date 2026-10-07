@@ -778,7 +778,9 @@ h713_init(void)
 	              (uint32_t)((uintptr_t)__bss_start - FIRMWARE_BASE) |
 	              (uint32_t)CONFIG(H713_DRAM_SELF_REFRESH) << 24 |
 	              (uint32_t)CONFIG(H713_DEEP_SLEEP) << 25 |
-	              (uint32_t)CONFIG(H713_IR_WAKE_NECX) << 26);
+	              (uint32_t)CONFIG(H713_IR_WAKE_NECX) << 26 |
+	              (uint32_t)CONFIG(H713_DEEP_VDD_SYS) << 27 |
+	              (uint32_t)CONFIG(H713_DEEP_PLL_LDO) << 28);
 	portmap_init();
 	device_get(&msgbox.dev);
 	if (acked)

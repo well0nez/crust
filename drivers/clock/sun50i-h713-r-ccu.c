@@ -301,15 +301,19 @@ r_ccu_suspend(uint8_t depth UNUSED)
 	udelay(1);
 	mmio_clr_32(RTC_LOSC_OUT, BIT(0));                      /* 0xdd9c */
 	udelay(100);
+#if CONFIG(H713_DEEP_PLL_LDO)
 	v = (mmio_read_32(PLL_CTRL_REG1) & ~PLL_CTRL_REG1_LDO_EN) |
 	    PLL_CTRL_REG1_KEY;                                  /* 0xddbc */
 	mmio_write_32(PLL_CTRL_REG1, v);
 	mmio_write_32(PLL_CTRL_REG1, v);
 	udelay(100);
+#endif
+#if CONFIG(H713_DEEP_VDD_SYS)
 	/* 0xdea8 (the blob skips it for power_down or a USB wake source) */
 	mmio_clr_32(VDD_SYS_RESET_REG, VDD_SYS_RESET);
 	mmio_set_32(VDD_SYS_PWROFF_GATING_REG, AVCC_GATING);
 	mmio_set_32(VDD_SYS_PWROFF_GATING_REG, UNK_GATING_BIT_08);
+#endif
 }
 
 void __attribute__((noinline))
@@ -317,16 +321,20 @@ r_ccu_resume(void)
 {
 	uint32_t v;
 
+#if CONFIG(H713_DEEP_VDD_SYS)
 	/* 0xe3a8 */
 	mmio_clr_32(VDD_SYS_PWROFF_GATING_REG, UNK_GATING_BIT_08);
 	mmio_clr_32(VDD_SYS_PWROFF_GATING_REG, AVCC_GATING);
 	mmio_set_32(VDD_SYS_RESET_REG, VDD_SYS_RESET);
+#endif
+#if CONFIG(H713_DEEP_PLL_LDO)
 	/* 0xddec */
 	v = mmio_read_32(PLL_CTRL_REG1) | PLL_CTRL_REG1_KEY |
 	    PLL_CTRL_REG1_LDO_EN;
 	mmio_write_32(PLL_CTRL_REG1, v);
 	mmio_write_32(PLL_CTRL_REG1, v);
 	udelay(100);
+#endif
 	/* 0xde24/0xde44/0xde68 turn the crystal on, select it and gate the
 	 * 32k output on; here the state from before the sleep comes back
 	 * instead (see losc_saved): first the oscillator, then the source.

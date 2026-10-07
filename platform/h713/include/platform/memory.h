@@ -58,7 +58,8 @@
  * the armed wake timer in milliseconds (0x26 type 3; 0 = none) - here, not
  * in .bss, so a firmware restart while asleep still ends the standby, with
  * a reset - and +0x3c the build: image size in bits 19..0, bit 24 DRAM
- * self-refresh, bit 25 deep sleep, bit 26 IR wake codes.
+ * self-refresh, bit 25 deep sleep, bit 26 IR wake codes, bit 27 the deep VDD_SYS step,
+ * bit 28 the deep PLL LDO step (0034; D1a has bit 25 without 27 and 28).
  */
 #define H713_DIAG_BASE       (H713_SHARED_BASE + 0x200)
 #define H713_DIAG_STEP       (H713_DIAG_BASE + 0x2c)
