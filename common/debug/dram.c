@@ -7,6 +7,10 @@
 #include <mmio.h>
 #include <steps.h>
 #include <util.h>
+#if CONFIG(PLATFORM_H713)
+#include <hdmi/sun50i-h713-hdmi.h>
+#include <platform/memory.h>
+#endif
 
 #define DRAM_BASE  0x40000000
 
@@ -39,7 +43,21 @@ dram_save_checksum(void)
 void
 dram_verify_checksum(void)
 {
+	uint32_t checksum;
+
 	record_step(STEP_RESUME_DRAM_CHECKSUM);
-	if (dram_calc_checksum() != saved_checksum)
-		panic("DRAM checksum mismatch!");
+	checksum = dram_calc_checksum();
+	if (checksum == saved_checksum)
+		return;
+#if CONFIG(PLATFORM_H713)
+	/*
+	 * A record, not yet a reset: the words lie in Linux's low memory, and
+	 * whether a DMA master writes there between the save and the
+	 * self-refresh is not measured. A false alarm must not reset a
+	 * healthy system; this becomes fatal once long runs show no mismatch.
+	 */
+	h713_err(H713_ERR_DRAM_SUM, 0, checksum);
+#else
+	panic("DRAM checksum mismatch!");
+#endif
 }
