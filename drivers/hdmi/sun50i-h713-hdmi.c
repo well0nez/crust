@@ -101,7 +101,7 @@
 
 /* ---- the HDMI aux block (RTC domain) ------------------------------------ */
 #define AUX_HPD_REG     (DEV_HDMI_AUX + 0x014) /* active-low, one bit per pin */
-#define AUX_UNK_020     (DEV_HDMI_AUX + 0x020) /* blob 0x1105c(1): = 1 */
+#define AUX_UNK_020     (DEV_HDMI_AUX + 0x020) /* blob 0x1105c(1): = 3 */
 #define AUX_UNK_030     (DEV_HDMI_AUX + 0x030) /* blob 0x10fac(0x18): = 0 */
 #define AUX_UNK_034     (DEV_HDMI_AUX + 0x034) /* blob 0x10fac(0x18): = 0x18 */
 #define AUX_UNK_038     (DEV_HDMI_AUX + 0x038) /* blob 0x10fac(0x18): = 0x18 */
@@ -306,7 +306,8 @@ publish(void)
  *   0x12170..0x1217c b04 &= 0x00ffffff; g_Data +2/+3/+4 = 0; 0x12198 the gate
  *   helper 0x11cac(7, 1), which closes while +2 is 0 (0x11d54); 0x121a8 b00 =
  *   0x00a0a0a0; +2 = 1 and publish(7); then 0x10fac(0x18): +0x030 = 0, +0x034
- *   = +0x038 = 0x18; 0x1105c(1): +0x020 = 1; 0x11084(1) enables ARISC irq 0x28
+ *   = +0x038 = 0x18; 0x1105c(1): +0x020 = 3 (0x1105c stores arg ? 3 : 0);
+ *   0x11084(1) enables ARISC irq 0x28
  *   (0x5fd0) -- not done here: this firmware polls and has no handler for it.
  * The meaning of b00/b08/0x020..0x038 is unread; they are written because
  * the blob writes them on every reset, and nothing else is.
@@ -332,7 +333,7 @@ reset_module(void)
 	mmio_write_32(AUX_UNK_030, 0);
 	mmio_write_32(AUX_UNK_034, 0x18);
 	mmio_write_32(AUX_UNK_038, 0x18);
-	mmio_write_32(AUX_UNK_020, 1);
+	mmio_write_32(AUX_UNK_020, 3);
 	sh_status(ST_EDID_MODULE, 0);
 }
 
