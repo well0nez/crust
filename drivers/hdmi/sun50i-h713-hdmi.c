@@ -56,7 +56,9 @@
 #define RPM_BUF_LEN     67                         /* the kernel's PAYLOAD_MAX */
 
 #define H713_MAGIC      0x33313748                 /* 'H','7','1','3' */
-#define H713_VERSION    0x00000002                 /* 2: diagnostic words */
+/* 2: diagnostic words; 3: step/exception records, sleep length, wake timer
+ * and the build word (platform/memory.h) */
+#define H713_VERSION    0x00000003
 
 /* Diagnostic words (platform/memory.h), kept across firmware restarts. */
 #define DIAG_LEWIN_EN   (H713_DIAG_BASE + 0x00)    /* written by start.S */
@@ -203,6 +205,8 @@ static const uint32_t ir_wake_codes[] = {	/* hy310-stock.dts 2569-2611, in its o
 	IR(0xfd02, 0x1d), IR(0xfe01, 0x00), IR(0x0707, 0x02),
 };
 #endif
+
+extern char __bss_start[];	/* the end of the image (scp.ld.S) */
 
 #define sh_rd8(a)    mmio_read_8(a)
 #define sh_wr8(a, v) mmio_write_8(a, v)
@@ -712,6 +716,16 @@ h713_init(void)
 	mmio_write_32(DIAG_INTC_88, mmio_read_32(DEV_R_INTC + 0x88));
 	mmio_write_32(SH_MAGIC, H713_MAGIC);
 	mmio_write_32(SH_VERSION, H713_VERSION);
+	/*
+	 * Which crust this is: the kernel keeps a running image only when it
+	 * is the one in the file it was asked to load (same size), and shows
+	 * the variant - light, self-refresh and deep share version and notify.
+	 */
+	mmio_write_32(H713_DIAG_BUILD,
+	              (uint32_t)((uintptr_t)__bss_start - FIRMWARE_BASE) |
+	              (uint32_t)CONFIG(H713_DRAM_SELF_REFRESH) << 24 |
+	              (uint32_t)CONFIG(H713_DEEP_SLEEP) << 25 |
+	              (uint32_t)CONFIG(H713_IR_WAKE_NECX) << 26);
 	portmap_init();
 	device_get(&msgbox.dev);
 	send_notify();
