@@ -176,6 +176,7 @@
 #define CPU_OP_DELAY_US 50000
 #define KEY_POLL_US     20000
 #define KEY_DEBOUNCE    3
+#define KEY_RELEASE_MS  3000  /* the longest a held key delays the resume */
 #define SB_FRAME_US     100000 /* a port 3 frame not complete by then is dropped */
 
 static uint8_t  edid[2 * EDID_BLOCK];
@@ -202,7 +203,14 @@ static uint32_t sb_hdr, sb_data[8];
 static uint32_t hpd_deadline, key_deadline, ms_deadline, sb_deadline;
 static bool     wake_armed;	/* .bss: false again after a firmware restart */
 static bool     woke;		/* a resume since the last 0x11 */
-static uint8_t  key_low;
+/*
+ * The power key asleep: ENTRY until it reads high once (a key held when
+ * the standby began is not a press), ARMED until KEY_DEBOUNCE low samples,
+ * OPEN until it is released or KEY_RELEASE_MS are up.
+ */
+enum { KEY_ENTRY, KEY_ARMED, KEY_OPEN };
+static uint8_t  key_state, key_count;
+static uint32_t key_open_ms;
 static uint32_t pl_cfg_saved;
 /*
  * PL0..PL7 as Linux left them: the power key PL4 is a gpio-keys interrupt
@@ -1049,7 +1057,8 @@ h713_suspend_prepare(void)
 		gpio_set_value(&led_red, true);
 	if (!gpio_get(&led_blue))
 		gpio_set_value(&led_blue, false);
-	key_low = 0;
+	key_state = KEY_ENTRY;
+	key_count = 0;
 	key_deadline = timeout_set(KEY_POLL_US);
 	ms_deadline = timeout_set(1000);
 	wake_armed = true;
@@ -1083,22 +1092,51 @@ h713_wake_poll(void)
 		mmio_write_32(H713_DIAG_SLEPT_MS,
 		              mmio_read_32(H713_DIAG_SLEPT_MS) + 1);
 	}
-	if (timer && mmio_read_32(H713_DIAG_SLEPT_MS) >= timer) {
+	if (timer && key_state != KEY_OPEN &&
+	    mmio_read_32(H713_DIAG_SLEPT_MS) >= timer) {
 		mmio_write_32(SH_WAKE, WAKE_TIMER);
 		return WAKE_TIMER;
 	}
 
 	if (passed(key_deadline)) {
+		bool low = gpio_get_value(&key_pin, &level) == SUCCESS && !level;
+
 		key_deadline = timeout_set(KEY_POLL_US);
-		if (gpio_get_value(&key_pin, &level) == SUCCESS && !level)
-			key_low++;
-		else
-			key_low = 0;
-		if (key_low >= KEY_DEBOUNCE) {
-			mmio_write_32(SH_WAKE, WAKE_KEY);
-			return WAKE_KEY;
+		switch (key_state) {
+		case KEY_ENTRY:
+			/* lows count only after a high (PRUEFUNG5 CS-10) */
+			if (!low)
+				key_state = KEY_ARMED, key_count = 0;
+			else if (!key_count++)
+				h713_err(H713_ERR_KEY_HELD, 0, 0);
+			break;
+		case KEY_ARMED:
+			key_count = low ? key_count + 1 : 0;
+			if (key_count >= KEY_DEBOUNCE) {
+				mmio_write_32(SH_WAKE, WAKE_KEY);
+				key_state = KEY_OPEN, key_count = 0;
+				key_open_ms = mmio_read_32(H713_DIAG_SLEPT_MS);
+			}
+			break;
+		default:
+			/*
+			 * The wake is the key's. Resume once it is released:
+			 * PL4 stays an input until then, so the release edge
+			 * never reaches the EINT detector, gpio-keys reports no
+			 * press and logind does not power the box off
+			 * (PRUEFUNG5 CS-07). A key held longer resumes after
+			 * KEY_RELEASE_MS; Linux has to ignore that one press.
+			 */
+			key_count = low ? 0 : key_count + 1;
+			if (key_count >= KEY_DEBOUNCE ||
+			    mmio_read_32(H713_DIAG_SLEPT_MS) - key_open_ms >=
+			    KEY_RELEASE_MS)
+				return WAKE_KEY;
+			break;
 		}
 	}
+	if (key_state == KEY_OPEN)
+		return 0;
 #if CONFIG(H713_IR_WAKE_NECX)
 	if (cir) {
 		uint32_t code = sunxi_cir_poll(cir);
