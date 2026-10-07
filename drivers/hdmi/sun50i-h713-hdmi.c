@@ -706,6 +706,17 @@ send_notify(void)
 void
 h713_init(void)
 {
+	/*
+	 * A restart through an exception while awake, after Linux took the
+	 * notify (both loaders zero the start counter, the magic and the
+	 * status first): nobody listens for a second notify, and its words
+	 * would come before the answer to the next standby request. The
+	 * handshake stands; no notify.
+	 */
+	bool acked = mmio_read_32(DIAG_INITS) != 0 &&
+	             mmio_read_32(SH_MAGIC) == H713_MAGIC &&
+	             (mmio_read_32(SH_STATUS) & ST_HANDSHAKE);
+
 	for (uintptr_t a = H713_SHARED_BASE; a < H713_SHARED_LIMIT; a += 4) {
 		if (a < H713_DIAG_BASE || a >= H713_DIAG_LIMIT)
 			mmio_write_32(a, 0);
@@ -728,7 +739,10 @@ h713_init(void)
 	              (uint32_t)CONFIG(H713_IR_WAKE_NECX) << 26);
 	portmap_init();
 	device_get(&msgbox.dev);
-	send_notify();
+	if (acked)
+		sh_status(ST_HANDSHAKE, 0);
+	else
+		send_notify();
 	sh_status(ST_RUNNING, 0);
 	hpd_deadline = timeout_set(HPD_TICK_US);
 }
@@ -739,11 +753,13 @@ h713_poll(void)
 	uint32_t w;
 
 	q_drain(Q_REPLY);
-	q_drain(Q_NOTIFY);
 	/* Standby frames always: their answers are three words at most, and
-	 * TF-A's cpu op req must never wait behind an unread reply. */
+	 * TF-A's cpu op req must never wait behind an unread reply. Read
+	 * before channel 3 is refilled, so a request that clears the queue
+	 * (sb_frame) does so before stale words reach the emptied FIFO. */
 	while (msgbox_receive(&msgbox.dev, PORT_STANDBY, &w) == SUCCESS)
 		sb_word(w);
+	q_drain(Q_NOTIFY);
 	/* The pump one request at a time: the next after the last reply left. */
 	while (q_empty(Q_REPLY) &&
 	       msgbox_receive(&msgbox.dev, PORT_HDMI, &w) == SUCCESS)
