@@ -30,6 +30,22 @@ config H713_POWER_KEY_PIN
 	help
 		standby_param power_key = "PL4" on every board seen.
 
+config H713_LED_RED_PIN
+	int "Port L pin of the red standby LED, -1 = none"
+	default -1
+	range -1 31
+	help
+		High while asleep, low after the wake. The HY310's stock
+		U-Boot prj node has it on PL0; no other board has been read
+		(PRUEFUNG5 N-08), and crust drives no pin it does not know.
+
+config H713_LED_BLUE_PIN
+	int "Port L pin of the blue LED, -1 = none"
+	default -1
+	range -1 31
+	help
+		Low while asleep, high after the wake. HY310: PL1.
+
 config H713_RAILS_PIN
 	int "Port L pin the vendor standby_param names for all rails, -1 = never drive it"
 	default -1

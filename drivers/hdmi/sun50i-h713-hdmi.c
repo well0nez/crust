@@ -228,8 +228,19 @@ static struct {
 #define PL(pin, m, p) { .dev = &r_pio.dev, .id = SUNXI_GPIO_PIN(0, pin), \
 	.drive = DRIVE_10mA, .mode = m, .pull = p }
 static const struct gpio_handle key_pin  = PL(CONFIG_H713_POWER_KEY_PIN, MODE_INPUT, PULL_UP);
-static const struct gpio_handle led_red  = PL(0, MODE_OUTPUT, PULL_NONE); /* dt led0 */
-static const struct gpio_handle led_blue = PL(1, MODE_OUTPUT, PULL_NONE); /* dt led1 */
+/*
+ * The standby LEDs (Kconfig, -1 = none): red on and blue off asleep, the
+ * other way round after the wake. Only the HY310's are known (its stock
+ * U-Boot prj node: PL0 red, PL1 blue), where the LED follows PB5 anyway;
+ * a board without that evidence gets no pin driven (PRUEFUNG5 N-08).
+ */
+#define LED_RED         CONFIG_H713_LED_RED_PIN
+#define LED_BLUE        CONFIG_H713_LED_BLUE_PIN
+#define LED_PIN(pin)    ((pin) >= 0 ? (pin) : 0)
+#define LED_BIT(pin)    ((pin) >= 0 ? BIT(LED_PIN(pin)) : 0)
+#define LED_MASK        (LED_BIT(LED_RED) | LED_BIT(LED_BLUE))
+static const struct gpio_handle led_red  = PL(LED_PIN(LED_RED), MODE_OUTPUT, PULL_NONE);
+static const struct gpio_handle led_blue = PL(LED_PIN(LED_BLUE), MODE_OUTPUT, PULL_NONE);
 
 #if CONFIG(H713_IR_WAKE_NECX)
 /* cir_param of the HY310 and HY300 Pro vendor DTs, in crust's NECX order. */
@@ -1053,9 +1064,9 @@ h713_suspend_prepare(void)
 	if (gpio_get(&key_pin))
 		h713_err(H713_ERR_KEY_PIN, CONFIG_H713_POWER_KEY_PIN, 0),
 		warn("H713: power key pin unavailable");
-	if (!gpio_get(&led_red))
+	if (LED_RED >= 0 && !gpio_get(&led_red))
 		gpio_set_value(&led_red, true);
-	if (!gpio_get(&led_blue))
+	if (LED_BLUE >= 0 && !gpio_get(&led_blue))
 		gpio_set_value(&led_blue, false);
 	key_state = KEY_ENTRY;
 	key_count = 0;
@@ -1175,15 +1186,20 @@ h713_resume_done(void)
 {
 	const uint32_t key_bit = BIT(CONFIG_H713_POWER_KEY_PIN);
 
-	gpio_set_value(&led_blue, true);
-	gpio_set_value(&led_red, false);
-	gpio_put(&led_blue);
-	gpio_put(&led_red);
+	if (LED_BLUE >= 0) {
+		gpio_set_value(&led_blue, true);
+		gpio_put(&led_blue);
+	}
+	if (LED_RED >= 0) {
+		gpio_set_value(&led_red, false);
+		gpio_put(&led_red);
+	}
 	gpio_put(&key_pin);
 	device_put(cir), cir = NULL;
 	mmio_write_32(R_PIO_PL_CFG1, pl_cfg_saved);	/* the kernel's IR pin */
 	/* the kernel's power key interrupt and its LED state, as before */
-	mmio_clrset_32(R_PIO_PL_DATA, 0x3, pl_data_saved & 0x3);
+	if (LED_MASK)
+		mmio_clrset_32(R_PIO_PL_DATA, LED_MASK, pl_data_saved & LED_MASK);
 	mmio_write_32(R_PIO_PL_PULL0, pl_pull0_saved);
 	mmio_write_32(R_PIO_PL_DRV0, pl_drv0_saved);
 	mmio_write_32(R_PIO_PL_DRV1, pl_drv1_saved);
