@@ -241,6 +241,7 @@
 #define H713_ERR_DRAM_SUM    14
 #define H713_ERR_RWDOG_FOUND 15
 #define H713_ERR_RWDOG_RESET 16
+#define H713_ERR_RWDOG_DISARM 17 /* MODE still armed after a disarm: detail 0 release, 1 first start */
 
 /* Counter bytes for h713_cnt(), at the byte the ARM reads them from. */
 #define H713_CNT_SB_DROP     (H713_K_CNT0 + 0) /* port 3 words, partial frames dropped */

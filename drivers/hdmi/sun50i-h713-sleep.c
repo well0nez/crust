@@ -131,15 +131,30 @@ feed(void)
 	feed_next = cycle_counter_read() + FEED_MS * MS;
 }
 
-/* The net off (feed, MODE off, read back), the phase RELEASED. */
+/*
+ * The net off (feed, MODE off, read back); one that still reads armed is
+ * recorded (error bit 17, @where 0 release, 1 first start). After a
+ * standby it keeps SB_STATE bit 4 and stays fed: a reset of a box that is
+ * awake and well would be worse.
+ */
+static bool
+disarm(uint8_t where)
+{
+	uint32_t mode = h713_rwdog_disarm();
+
+	if (mode & 1)
+		h713_err(H713_ERR_RWDOG_DISARM, where, mode);
+	return mode & 1;
+}
+
+/* The net off, the phase RELEASED. */
 static void
 release(void)
 {
 	uint32_t st = state() & ~(H713_SB_ARMED | H713_SB_TAKEN);
 
 	if (CONFIG(H713_SLEEP_NET) &&
-	    (state() & (H713_SB_ARMED | H713_SB_TAKEN)) &&
-	    (h713_rwdog_disarm() & 1))
+	    (state() & (H713_SB_ARMED | H713_SB_TAKEN)) && disarm(0))
 		st |= H713_SB_ARMED;
 	set_phase(st, H713_PH_RELEASED);
 }
@@ -273,7 +288,7 @@ h713_sleep_init(bool first)
 	mmio_write_32(H713_K_NET_FOUND, found);
 	if (found & 1) {
 		h713_err(H713_ERR_RWDOG_FOUND, 0, found);
-		h713_rwdog_disarm();
+		disarm(1);
 	}
 }
 
