@@ -346,11 +346,11 @@ h713_fail(uint8_t cause, uint8_t detail, uint32_t data)
 	 * design's order: VDD_SYS out of reset and ungated, the PLL LDO on,
 	 * the DRAM pad hold (dram.c) off. GP5 stays as it is.
 	 */
-	if (CONFIG(H713_DEEP_VDD_SYS)) {
+	if (CONFIG(H713_DEEP_VDD_SYS))
 		mmio_set_32(VDD_SYS_RESET_REG, VDD_SYS_RESET);
+	if (CONFIG(H713_DEEP_AVCC_GATING))
 		mmio_clr_32(VDD_SYS_PWROFF_GATING_REG,
 		            AVCC_GATING | UNK_GATING_BIT_08);
-	}
 	if (CONFIG(H713_DEEP_PLL_LDO)) {
 		uint32_t v = mmio_read_32(PLL_CTRL_REG1) | PLL_CTRL_REG1_KEY |
 		             PLL_CTRL_REG1_LDO_EN;

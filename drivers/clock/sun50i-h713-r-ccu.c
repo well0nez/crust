@@ -415,6 +415,10 @@ r_ccu_suspend(uint8_t depth UNUSED)
 	 */
 	substep(H713_SUB_DOMAIN_OFF, 0);
 	mmio_clr_32(VDD_SYS_RESET_REG, VDD_SYS_RESET);
+#endif
+#if CONFIG(H713_DEEP_AVCC_GATING)
+	/* 0xdea8's gating, on its own switch (PRUEFUNG5 DEEP-09) */
+	substep(H713_SUB_DOMAIN_OFF, 1);
 	mmio_set_32(VDD_SYS_PWROFF_GATING_REG, AVCC_GATING);
 	mmio_set_32(VDD_SYS_PWROFF_GATING_REG, UNK_GATING_BIT_08);
 #endif
@@ -423,11 +427,14 @@ r_ccu_suspend(uint8_t depth UNUSED)
 void __attribute__((noinline))
 r_ccu_resume(void)
 {
-#if CONFIG(H713_DEEP_VDD_SYS)
 	/* 0xe3a8 */
+#if CONFIG(H713_DEEP_AVCC_GATING)
 	substep(H713_SUB_DOMAIN_ON, 0);
 	mmio_clr_32(VDD_SYS_PWROFF_GATING_REG, UNK_GATING_BIT_08);
 	mmio_clr_32(VDD_SYS_PWROFF_GATING_REG, AVCC_GATING);
+#endif
+#if CONFIG(H713_DEEP_VDD_SYS)
+	substep(H713_SUB_DOMAIN_ON, 1);
 	mmio_set_32(VDD_SYS_RESET_REG, VDD_SYS_RESET);
 #endif
 #if CONFIG(H713_DEEP_PLL_LDO)

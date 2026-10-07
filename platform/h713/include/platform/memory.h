@@ -189,8 +189,8 @@
 #define H713_SUB_ROOT_OSC    2  /* root clock i to OSC24M (r-ccu.c root_clk[]) */
 #define H713_SUB_PLL_OFF     3  /* PLL i off (r-ccu.c pll_reg[]) */
 #define H713_SUB_LDO_OFF     4
-#define H713_SUB_DOMAIN_OFF  5  /* 0 VDD_SYS reset and gating */
-#define H713_SUB_DOMAIN_ON   6  /* 0 VDD_SYS ungated and out of reset */
+#define H713_SUB_DOMAIN_OFF  5  /* 0 VDD_SYS reset, 1 AVCC and bit 8 gated */
+#define H713_SUB_DOMAIN_ON   6  /* 0 AVCC and bit 8 ungated, 1 VDD_SYS reset off */
 #define H713_SUB_LDO_ON      7
 #define H713_SUB_PLL_ON      8  /* PLL i back */
 #define H713_SUB_ROOT_BACK   9  /* root clock i back to its source */

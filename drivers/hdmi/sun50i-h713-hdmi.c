@@ -988,7 +988,8 @@ h713_init(void)
 	              (uint32_t)CONFIG(H713_DEEP_VDD_SYS) << 27 |
 	              (uint32_t)CONFIG(H713_DEEP_PLL_LDO) << 28 |
 	              (uint32_t)CONFIG(H713_SLEEP_NET) << 29 |
-	              (uint32_t)CONFIG(H713_TEST) << 30);
+	              (uint32_t)CONFIG(H713_TEST) << 30 |
+	              (uint32_t)CONFIG(H713_DEEP_AVCC_GATING) << 31);
 	mmio_write_32(H713_K_COMPAT, H713_COMPAT);
 	mmio_write_32(H713_K_BUILD2, (BUILD2_DRAM_MHZ & 0xfff) |
 	              (CONFIG_H713_BOARD_ID & 0xf) << 12 |

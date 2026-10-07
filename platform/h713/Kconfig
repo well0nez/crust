@@ -83,7 +83,7 @@ config H713_DEEP_SLEEP
 		OSC24M, every PLL off, the RTC's LOSC not touched (only
 		read after the resume), and on the way back MBUS
 		reset and rebuilt with the NSI and display-bus gates
-		(sun50i-h713-ccu.c). The PLL LDO and the VDD_SYS steps of
+		(sun50i-h713-ccu.c). The PLL LDO, VDD_SYS and AVCC steps of
 		the blob come only with their own switches below. Ported,
 		offline model only; no device run.
 
@@ -109,15 +109,28 @@ config H713_DEEP_PLL_LDO
 		otherwise.
 
 config H713_DEEP_VDD_SYS
-	bool "Deep sleep: VDD_SYS reset and AVCC/bit 8 gating"
+	bool "Deep sleep: VDD_SYS reset"
 	depends on H713_DEEP_SLEEP
 	help
-		Blob 0xdea8 down, 0xe3a8 up. It resets the main domain - CCU
+		Blob 0xdea8 down, 0xe3a8 up, the reset alone (the gating has
+		its own switch below). It resets the main domain - CCU
 		gates, pin functions, UART0, the msgbox and the SoC watchdog
 		- and mainline Linux restores none of it (PRUEFUNG4 PD-1,
 		PD-3; PRUEFUNG5 design A: never in a suspend). Build word bit
 		27; TF-A and the kernel always refuse such an image. Only for
 		the trace comparison with the blob.
+
+config H713_DEEP_AVCC_GATING
+	bool "Deep sleep: AVCC and bit 8 gating (an experiment)"
+	depends on H713_DEEP_SLEEP
+	help
+		The gating half of blob 0xdea8/0xe3a8: R_PRCM 0x250 bit 2
+		(AVCC) and bit 8 set on the way down, cleared on the way up,
+		without the VDD_SYS reset. Upstream crust gates AVCC only
+		with OSC24M off, and the H713 sleeps on OSC24M; what bit 8
+		gates is not known (PRUEFUNG5 DEEP-09). Build word bit 31;
+		TF-A and the kernel refuse such an image unless told
+		otherwise. Never for a release.
 
 config H713_SLEEP_NET
 	bool "Sleep net: the R_WDOG armed from the standby request to Linux's confirm"
