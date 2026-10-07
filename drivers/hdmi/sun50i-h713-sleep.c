@@ -93,11 +93,17 @@ set_phase(uint32_t st, uint8_t ph)
 		mmio_write_32(H713_K_NET_MS, 0);
 }
 
-/* NET_MS from the tick timer, stepped from the deadline so nothing drifts. */
+/*
+ * NET_MS from the tick timer, stepped from the deadline so nothing drifts;
+ * WAKE_MS from the cpu op req to CPU0's release (CPU_OP and SLEEP), which
+ * TF-A puts the system counter forward by (PRUEFUNG5 CS-15).
+ */
 static void
 tick(void)
 {
-	bool count = net_phase(phase());
+	uint8_t ph = phase();
+	bool count = net_phase(ph);
+	bool wake = ph == H713_PH_CPU_OP || ph == H713_PH_SLEEP;
 
 	if (!ms_armed) {
 		ms_next   = cycle_counter_read() + MS;
@@ -109,6 +115,9 @@ tick(void)
 		if (count)
 			mmio_write_32(H713_K_NET_MS,
 			              mmio_read_32(H713_K_NET_MS) + 1);
+		if (wake)
+			mmio_write_32(H713_K_WAKE_MS,
+			              mmio_read_32(H713_K_WAKE_MS) + 1);
 	}
 }
 
@@ -189,6 +198,7 @@ h713_sleep_event(uint8_t ev)
 
 	switch (ev) {
 	case H713_EV_CPU_OP:
+		mmio_write_32(H713_K_WAKE_MS, 0);
 		if (ph != H713_PH_PRESLEEP) {
 			/* no request taken: a v4 TF-A; counted, no budget */
 			cycle = mmio_read_32(H713_K_CYCLE) + 1;

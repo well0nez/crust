@@ -276,8 +276,10 @@ system_state_machine(uint32_t exception)
 			}
 			device_put(pmic);
 
-			/* Give regulator outputs time to rise. */
-			udelay(5000);
+			/* Give regulator outputs time to rise (the H713 has
+			 * none: no PMIC, every supply NULL). */
+			if (!CONFIG(PLATFORM_H713))
+				udelay(5000);
 
 			/* Restore SoC-internal power domains. */
 			record_step(STEP_RESUME_PRCM);
