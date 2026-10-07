@@ -59,8 +59,16 @@
 #define H713_MAGIC      0x33313748                 /* 'H','7','1','3' */
 /* 2: diagnostic words; 3: step/exception records, sleep length, wake timer
  * and the build word (platform/memory.h); 4: the size of the part of the
- * image that never changes (+0x1fc), which the kernel compares with the file */
-#define H713_VERSION    0x00000004
+ * image that never changes (+0x1fc), which the kernel compares with the
+ * file; 5: the K and A blocks (standby phases, the net request, error bits
+ * and counters). A version 4 reader still reads everything it knows. */
+#define H713_VERSION    0x00000005
+#define H713_COMPAT     (4 | H713_NET_FORMAT << 8)
+#if CONFIG(H713_DRAM_SELF_REFRESH)
+#define BUILD2_DRAM_MHZ CONFIG_H713_DRAM_CLK
+#else
+#define BUILD2_DRAM_MHZ 0
+#endif
 
 /* Diagnostic words (platform/memory.h), kept across firmware restarts. */
 #define DIAG_LEWIN_EN   (H713_DIAG_BASE + 0x00)    /* written by start.S */
@@ -240,6 +248,26 @@ passed(uint32_t deadline)
 	return (int32_t)(cycle_counter_read() - deadline) >= 0;
 }
 
+/* ---- the record in the K block (platform/memory.h) ------------------------ */
+void
+h713_err(uint8_t bit, uint8_t detail, uint32_t data)
+{
+	mmio_write_32(H713_K_ERR, mmio_read_32(H713_K_ERR) | BIT(bit));
+	mmio_write_32(H713_K_ERR_DETAIL, (uint32_t)bit << 24 | detail << 16 |
+	              (mmio_read_32(H713_DIAG_STEP) & 0xffff));
+	mmio_write_32(H713_K_ERR_DATA, data);
+}
+
+void
+h713_cnt(uintptr_t at)
+{
+	uintptr_t word = at & ~3U;
+	uint32_t  sh   = 8 * (at & 3);
+	uint32_t  v    = mmio_read_32(word);
+
+	mmio_write_32(word, (v & ~(0xffU << sh)) | (((v >> sh) + 1) & 0xff) << sh);
+}
+
 /* ---- transmit queues: never block on an 8-deep FIFO ---------------------- */
 static bool
 q_empty(uint8_t q)
@@ -259,6 +287,8 @@ q_put(uint8_t q, uint32_t w)
 	uint8_t next = (q_tail[q] + 1) & (q_size[q] - 1);
 
 	if (next == q_head[q]) {
+		h713_err(H713_ERR_TXQ_FULL, q, w);
+		h713_cnt(H713_CNT_TXQ_FULL);
 		warn("H713: tx queue %u full", q); return;
 	}
 	if (q_empty(q))
@@ -283,6 +313,7 @@ q_drain(uint8_t q)
 	 */
 	if (q == Q_REPLY && !q_empty(q) && passed(q_stall[q])) {
 		warn("H713: stale reply dropped");
+		h713_cnt(H713_CNT_STALE_REPLY);
 		q_head[q] = q_tail[q];
 	}
 }
@@ -521,6 +552,7 @@ classify(void)
 
 	if (pump_type != 0) {
 		mmio_write_32(DIAG_ARM_TYPE, mmio_read_32(DIAG_ARM_TYPE) + 1);
+		h713_cnt(H713_CNT_ARM_UNKNOWN);
 		warn("H713: unknown ARM message type %u", pump_type); return;
 	}
 	if (lo == 0x11)
@@ -528,6 +560,7 @@ classify(void)
 	else if (lo == 0x15)
 		group_15(hi);
 	else if (lo < 0x10 || lo > 0x15)
+		h713_cnt(H713_CNT_ARM_UNKNOWN),
 		warn("H713: unknown sub-command %02x%02x", hi, lo);
 }
 
@@ -546,6 +579,8 @@ pump_word(uint32_t w)
 		 * sends length 0; a longer frame must still end inside it,
 		 * not in the words behind it (the diagnostic words at +0x200). */
 		pump_state = pump_len > RPM_BUF_LEN ? 0 : 1;
+		if (!pump_state)
+			h713_cnt(H713_CNT_PUMP_LONG);
 		break;
 	case 1:
 		if (pump_len == 0) {
@@ -585,6 +620,8 @@ mips_frame(const uint8_t *p, uint8_t len)
 			sh_wr8(SH_HPD_COUNTER + port, action == 3 ? HPD_RESET_TICKS : 0);
 	} else if (len >= 1 && p[0] == 0x17) {			/* 0x120f0 */
 		reset_module();
+	} else {
+		h713_cnt(H713_CNT_MIPS_DROP);
 	}
 }
 
@@ -598,13 +635,17 @@ mips_poll(void)
 
 			switch (mips[q].state) {
 			case 0:
-				if ((w & 0xff) != BOP_MARKER)
+				if ((w & 0xff) != BOP_MARKER) {
+					h713_cnt(H713_CNT_MIPS_DROP);
 					break;
+				}
 				mips[q].len = w >> 24;
 				mips[q].idx = 0;
 				for (uint8_t i = 0; i < sizeof(mips[q].buf); ++i)
 					mips[q].buf[i] = 0;
 				mips[q].state = mips[q].len > BOP_MAX_LEN ? 0 : 1;
+				if (!mips[q].state)
+					h713_cnt(H713_CNT_MIPS_DROP);
 				break;
 			case 1:
 				mips[q].state = mips[q].len ? 2 : 0;
@@ -636,6 +677,8 @@ sb_reply(uint8_t type, uint8_t result, uint32_t *data, uint8_t count)
 	if (!(attr & 3))
 		return;
 	if (q_free(Q_NOTIFY) < 2 + count) {
+		h713_err(H713_ERR_TXQ_FULL, Q_NOTIFY, type);
+		h713_cnt(H713_CNT_TXQ_FULL);
 		warn("H713: no room for the answer to %x", type); return;
 	}
 	q_put(Q_NOTIFY, SB_STATE | (uint32_t)attr << 8 | (uint32_t)type << 16 |
@@ -750,12 +793,23 @@ h713_init(void)
 	 * would come before the answer to the next standby request. The
 	 * handshake stands; no notify.
 	 */
-	bool acked = mmio_read_32(DIAG_INITS) != 0 &&
+	bool first = mmio_read_32(DIAG_INITS) == 0;
+	bool acked = !first &&
 	             mmio_read_32(SH_MAGIC) == H713_MAGIC &&
 	             (mmio_read_32(SH_STATUS) & ST_HANDSHAKE);
 
-	for (uintptr_t a = H713_SHARED_BASE; a < H713_SHARED_LIMIT; a += 4) {
+	/*
+	 * Contract v5 (platform/memory.h): R and S at every start; K and X
+	 * only at the first one after a load (a v4 kernel zeroes the diag
+	 * words, not K), so the record survives an exception restart. D, A
+	 * and P are the loaders'.
+	 */
+	for (uintptr_t a = H713_SHARED_BASE; a < H713_SEEN_LIMIT; a += 4) {
 		if (a < H713_DIAG_BASE || a >= H713_DIAG_LIMIT)
+			mmio_write_32(a, 0);
+	}
+	for (uintptr_t a = H713_K_BASE; first && a < H713_SHARED_LIMIT; a += 4) {
+		if (a < H713_K_LIMIT || a >= H713_X_BASE)
 			mmio_write_32(a, 0);
 	}
 	mmio_write_32(DIAG_CPUS_CLK, r_ccu_cpus_clk_at_boot());
@@ -780,7 +834,14 @@ h713_init(void)
 	              (uint32_t)CONFIG(H713_IR_WAKE_NECX) << 26 |
 	              (uint32_t)CONFIG(H713_DEEP_VDD_SYS) << 27 |
 	              (uint32_t)CONFIG(H713_DEEP_PLL_LDO) << 28);
+	mmio_write_32(H713_K_COMPAT, H713_COMPAT);
+	mmio_write_32(H713_K_BUILD2, BUILD2_DRAM_MHZ & 0xfff);
 	portmap_init();
+	/*
+	 * Load-bearing: system.c puts its own msgbox reference at every
+	 * suspend, and a last put would assert the msgbox reset (ccu.c); this
+	 * one keeps the box out of reset through the standby.
+	 */
 	device_get(&msgbox.dev);
 	if (acked)
 		sh_status(ST_HANDSHAKE, 0);
@@ -835,8 +896,10 @@ h713_suspend_prepare(void)
 	pl_drv1_saved  = mmio_read_32(R_PIO_PL_DRV1);	/* PL9, the IR pin */
 	pl_pull0_saved = mmio_read_32(R_PIO_PL_PULL0);
 	pl_data_saved  = mmio_read_32(R_PIO_PL_DATA);
-	cir = cir_get();
+	if (!(cir = cir_get()) && CONFIG(H713_IR_WAKE_NECX))
+		h713_err(H713_ERR_CIR, 0, 0);
 	if (gpio_get(&key_pin))
+		h713_err(H713_ERR_KEY_PIN, CONFIG_H713_POWER_KEY_PIN, 0),
 		warn("H713: power key pin unavailable");
 	if (!gpio_get(&led_red))
 		gpio_set_value(&led_red, true);

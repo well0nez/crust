@@ -20,6 +20,10 @@ void h713_suspend_prepare(void);
 uint32_t h713_wake_poll(void);
 /** Resume: release the wake sources, LEDs. */
 void h713_resume_done(void);
+/** Not fatal: set error bit @bit (platform/memory.h) with detail and data. */
+void h713_err(uint8_t bit, uint8_t detail, uint32_t data);
+/** Count one event in the counter byte at @at (H713_CNT_*), wrapping. */
+void h713_cnt(uintptr_t at);
 
 #else
 
@@ -28,6 +32,9 @@ static inline void h713_poll(void) {}
 static inline void h713_suspend_prepare(void) {}
 static inline uint32_t h713_wake_poll(void) { return 0; }
 static inline void h713_resume_done(void) {}
+static inline void h713_err(uint8_t bit UNUSED, uint8_t detail UNUSED,
+                            uint32_t data UNUSED) {}
+static inline void h713_cnt(uintptr_t at UNUSED) {}
 
 #endif
 
