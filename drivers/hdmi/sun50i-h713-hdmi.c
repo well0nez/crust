@@ -599,6 +599,9 @@ group_15(uint8_t hi)
 		}
 		if (sh_rd8(SH_EDID_READY) && sh_rd8(SH_EDID_GATE))
 			aux_gate(0x7, true);
+	} else {
+		/* no answer: the ARM gives up after its 2 s (PRUEFUNG5 F16) */
+		h713_cnt(H713_CNT_ARM_UNKNOWN);
 	}
 }
 
