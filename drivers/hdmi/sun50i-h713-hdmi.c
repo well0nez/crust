@@ -177,6 +177,7 @@
 #define KEY_DEBOUNCE    3
 
 static uint8_t  edid[2 * EDID_BLOCK];
+static bool     edid_valid;	/* .bss: no upload since this start */
 /*
  * Two transmit queues, one per ARM-RX channel, so a word the ARM does not
  * read on one channel never holds up the other: framed replies on channel 1
@@ -368,14 +369,19 @@ hpd_pin(uint8_t port, bool high)
 	mmio_write_32(AUX_HPD_REG, high ? (v & ~bit) : (v | bit));
 }
 
-/* Publish (blob 0x11d88): block by port mask, the port's physical-address
- * byte into the HDMI vendor block, checksum, gate closed while writing. */
+/*
+ * Publish (blob 0x11d88): block by port mask, the port's physical-address
+ * byte into the HDMI vendor block, checksum, gate closed while writing.
+ * Only a store that holds an upload: the blob also publishes the empty one
+ * from ResetEDIDModule, and a source read an all-zero EDID (HY310,
+ * 07.10.2026; PRUEFUNG5 F12) - the gate stays closed until fragment 7.
+ */
 static void
 publish(void)
 {
 	uint8_t mask = sh_rd8(SH_EDID_MASK);
 
-	if (!sh_rd8(SH_EDID_READY))
+	if (!sh_rd8(SH_EDID_READY) || !edid_valid)
 		return;
 	aux_gate(0x7, false);
 	for (uint8_t port = 0; port < PORTS; ++port) {
@@ -503,6 +509,8 @@ group_11(uint8_t hi)
 		dst[0] = a2;
 		for (uint8_t i = 1; i < 64; ++i)
 			dst[i] = sh_rd8(SH_RPM_BUF + 3 + i);
+		if (frag == 0 || frag == 7)	/* an upload starts, ends */
+			edid_valid = frag == 7;
 		sh_wr8(SH_EDID_READY, frag == 7);
 		if (frag == 7)
 			publish();
