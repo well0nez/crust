@@ -188,24 +188,17 @@ cpus_clk_osc24m(void)
  * crystal off, the PLL LDO off - and 0xdea8 (VDD_SYS reset, AVCC and bit 8
  * gating); 0xe3a8 and 0xddec on the way back. 0x6d04(n) is the blob's
  * microsecond busy wait, 0x6b68(n) its millisecond timer wait.
+ *
+ * The LOSC steps (0xdd50..0xdd9c down, 0xde24..0xde68 up) are not ported:
+ * the HY310 runs LOSC from the internal RC with the crystal off (LOSC_CTRL
+ * 0x8000, 07.10.2026; the DT rtc node has no clocks), nothing in the sleep
+ * needs it changed, and a dead LOSC would stop the RTC and the EINT sampler
+ * of the power key and IR edges (PRUEFUNG5 deep-clocks). Upstream crust
+ * never touches the RTC in a suspend either. LOSC_CTRL is only read, after
+ * the resume, for the device test.
  */
 #define RTC_LOSC_CTRL   (DEV_RTC + 0x000)
-#define RTC_LOSC_OUT    (DEV_RTC + 0x060)
-#define KEY_16AA        0x16aa0000
-#define LOSC_EXT_EN     BIT(4)  /* the 32k crystal's oscillator on */
-#define LOSC_EXT_SEL    BIT(0)  /* LOSC from the crystal, not the RC */
-/* LOSC_CTRL after the resume, for the device test (0033). */
 #define LOSC_SEEN       H713_SEEN_LOSC
-
-/*
- * What Linux had before the sleep. The blob turns the 32k crystal on and
- * selects it on the way back; on the HY310 Linux never did (07.10.2026:
- * LOSC_CTRL 0x8000 - the internal RC, the crystal off; the DT rtc node has
- * no clocks), and nobody knows whether a crystal is fitted. A dead LOSC
- * would stop the RTC and the EINT sampler that clocks the power key and
- * IR edges. So the resume puts back what the suspend found.
- */
-static uint32_t losc_saved, losc_out_saved;
 
 /* 0xcdd8's table 0x17124: the clocks it moves to source 0, divider 1. */
 static const uintptr_t root_clk[8] = {
@@ -282,27 +275,15 @@ plls_restore(void)                                      /* 0xcc2c(1) */
 void __attribute__((noinline))
 r_ccu_suspend(uint8_t depth UNUSED)
 {
-	uint32_t v;
-
+	mmio_write_32(LOSC_SEEN, 0);
 	root_clocks_to_osc24m();                                /* 0xdd30 */
 	udelay(100);
 	plls_off();                                             /* 0xdd40 */
 	udelay(100);
-	losc_saved     = mmio_read_32(RTC_LOSC_CTRL);
-	losc_out_saved = mmio_read_32(RTC_LOSC_OUT);
-	v = (mmio_read_32(RTC_LOSC_CTRL) & ~BIT(0)) | KEY_16AA; /* 0xdd50 */
-	mmio_write_32(RTC_LOSC_CTRL, v);
-	mmio_write_32(RTC_LOSC_CTRL, v);
-	udelay(1);
-	v = (mmio_read_32(RTC_LOSC_CTRL) & ~BIT(4)) | KEY_16AA; /* 0xdd74 */
-	mmio_write_32(RTC_LOSC_CTRL, v);
-	mmio_write_32(RTC_LOSC_CTRL, v);
-	udelay(1);
-	mmio_clr_32(RTC_LOSC_OUT, BIT(0));                      /* 0xdd9c */
-	udelay(100);
 #if CONFIG(H713_DEEP_PLL_LDO)
-	v = (mmio_read_32(PLL_CTRL_REG1) & ~PLL_CTRL_REG1_LDO_EN) |
-	    PLL_CTRL_REG1_KEY;                                  /* 0xddbc */
+	uint32_t v = (mmio_read_32(PLL_CTRL_REG1) & ~PLL_CTRL_REG1_LDO_EN) |
+	             PLL_CTRL_REG1_KEY;                         /* 0xddbc */
+
 	mmio_write_32(PLL_CTRL_REG1, v);
 	mmio_write_32(PLL_CTRL_REG1, v);
 	udelay(100);
@@ -325,8 +306,6 @@ r_ccu_suspend(uint8_t depth UNUSED)
 void __attribute__((noinline))
 r_ccu_resume(void)
 {
-	uint32_t v;
-
 #if CONFIG(H713_DEEP_VDD_SYS)
 	/* 0xe3a8 */
 	mmio_clr_32(VDD_SYS_PWROFF_GATING_REG, UNK_GATING_BIT_08);
@@ -335,31 +314,14 @@ r_ccu_resume(void)
 #endif
 #if CONFIG(H713_DEEP_PLL_LDO)
 	/* 0xddec */
-	v = mmio_read_32(PLL_CTRL_REG1) | PLL_CTRL_REG1_KEY |
-	    PLL_CTRL_REG1_LDO_EN;
+	uint32_t v = mmio_read_32(PLL_CTRL_REG1) | PLL_CTRL_REG1_KEY |
+	             PLL_CTRL_REG1_LDO_EN;
+
 	mmio_write_32(PLL_CTRL_REG1, v);
 	mmio_write_32(PLL_CTRL_REG1, v);
 	udelay(100);
 #endif
-	/* 0xde24/0xde44/0xde68 turn the crystal on, select it and gate the
-	 * 32k output on; here the state from before the sleep comes back
-	 * instead (see losc_saved): first the oscillator, then the source.
-	 * A board whose Linux runs LOSC from the crystal gets the blob's 1 us
-	 * between the two - the crystal kept running only if the suspend left
-	 * it on, which it does not; not measured, the HY310 has both bits 0. */
-	v = (mmio_read_32(RTC_LOSC_CTRL) & ~LOSC_EXT_EN) |
-	    (losc_saved & LOSC_EXT_EN) | KEY_16AA;
-	mmio_write_32(RTC_LOSC_CTRL, v);
-	mmio_write_32(RTC_LOSC_CTRL, v);
-	udelay(1);
-	v = (mmio_read_32(RTC_LOSC_CTRL) & ~LOSC_EXT_SEL) |
-	    (losc_saved & LOSC_EXT_SEL) | KEY_16AA;
-	mmio_write_32(RTC_LOSC_CTRL, v);
-	mmio_write_32(RTC_LOSC_CTRL, v);
-	udelay(1);
-	mmio_clrset_32(RTC_LOSC_OUT, BIT(0), losc_out_saved & BIT(0));
 	mmio_write_32(LOSC_SEEN, mmio_read_32(RTC_LOSC_CTRL));
-	udelay(100);
 	plls_restore();                                         /* 0xde7c */
 	udelay(100);
 	root_clocks_restore();                                  /* 0xde8c */

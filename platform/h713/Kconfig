@@ -80,8 +80,8 @@ config H713_DEEP_SLEEP
 	help
 		Part of the vendor's standby (blob 0xdd20 down, 0xe3f4, the
 		MBUS rebuild and 0xde7c..0xde8c up): bus and root clocks to
-		OSC24M, every PLL off, the RTC's LOSC as the suspend found it
-		(LOSC_CTRL saved and put back), and on the way back MBUS
+		OSC24M, every PLL off, the RTC's LOSC not touched (only
+		read after the resume), and on the way back MBUS
 		reset and rebuilt with the NSI and display-bus gates
 		(sun50i-h713-ccu.c). The PLL LDO and the VDD_SYS steps of
 		the blob come only with their own switches below. Ported,
