@@ -109,7 +109,11 @@
 #define AUX_GATE_REG    (DEV_HDMI_AUX + 0xb04) /* EDID/DDC output, bit per port */
 #define AUX_UNK_B08     (DEV_HDMI_AUX + 0xb08)
 #define AUX_DDC_RAM(p)  (DEV_HDMI_AUX + 0xc00 + 0x100 * (p))
+#define R_PIO_PL_CFG0   (DEV_R_PIO + 0x000)    /* PL0..PL7 function */
 #define R_PIO_PL_CFG1   (DEV_R_PIO + 0x004)    /* PL8..PL15 function */
+#define R_PIO_PL_DATA   (DEV_R_PIO + 0x010)
+#define R_PIO_PL_DRV0   (DEV_R_PIO + 0x014)    /* PL0..PL15 drive */
+#define R_PIO_PL_PULL0  (DEV_R_PIO + 0x01c)    /* PL0..PL15 pull */
 
 #define BOP_MARKER      0xa5
 #define BOP_MAX_LEN     128
@@ -151,6 +155,13 @@ static uint32_t hpd_deadline, key_deadline, ms_deadline;
 static uint32_t wake_timer_ms, wake_elapsed_ms;
 static uint8_t  key_low;
 static uint32_t pl_cfg_saved;
+/*
+ * PL0..PL7 as Linux left them: the power key PL4 is a gpio-keys interrupt
+ * there (EINT function), the LEDs PL0/PL1 plain outputs. Taking PL4 as an
+ * input and the LEDs for the sleep changes their function, drive and pull,
+ * and gpio_put() gives none of that back.
+ */
+static uint32_t pl_cfg0_saved, pl_drv0_saved, pl_pull0_saved, pl_data_saved;
 static const struct device *cir;
 static struct {
 	uint8_t state, len, idx, buf[8];
@@ -679,6 +690,10 @@ void
 h713_suspend_prepare(void)
 {
 	pl_cfg_saved = mmio_read_32(R_PIO_PL_CFG1);	/* PL9's function */
+	pl_cfg0_saved  = mmio_read_32(R_PIO_PL_CFG0);
+	pl_drv0_saved  = mmio_read_32(R_PIO_PL_DRV0);
+	pl_pull0_saved = mmio_read_32(R_PIO_PL_PULL0);
+	pl_data_saved  = mmio_read_32(R_PIO_PL_DATA);
 	cir = cir_get();
 	if (gpio_get(&key_pin))
 		warn("H713: power key pin unavailable");
@@ -743,6 +758,11 @@ h713_resume_done(void)
 	gpio_put(&key_pin);
 	device_put(cir), cir = NULL;
 	mmio_write_32(R_PIO_PL_CFG1, pl_cfg_saved);	/* the kernel's IR pin */
+	/* the kernel's power key interrupt and its LED state, as before */
+	mmio_clrset_32(R_PIO_PL_DATA, 0x3, pl_data_saved & 0x3);
+	mmio_write_32(R_PIO_PL_PULL0, pl_pull0_saved);
+	mmio_write_32(R_PIO_PL_DRV0, pl_drv0_saved);
+	mmio_write_32(R_PIO_PL_CFG0, pl_cfg0_saved);
 	sh_status(0, ST_ASLEEP);
 	wake_timer_ms = 0;	/* one standby at a time, as the vendor's 0x26 */
 	info("H713: resumed, wake word %x", mmio_read_32(SH_WAKE));

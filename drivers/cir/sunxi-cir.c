@@ -116,7 +116,7 @@ const struct sunxi_cir r_cir_rx = {
 		.dev   = &r_pio.dev,
 		.id    = SUNXI_GPIO_PIN(0, CONFIG_R_CIR_RX_PIN),
 		.drive = DRIVE_10mA,
-		.mode  = 2,
+		.mode  = CONFIG_R_CIR_RX_PIN_MODE,
 		.pull  = PULL_NONE,
 	},
 	.regs = DEV_R_CIR_RX,

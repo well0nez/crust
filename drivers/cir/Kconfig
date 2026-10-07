@@ -61,6 +61,15 @@ config CIR_USE_OSC24M
 		32768 Hz oscillator. Note that this increases power
 		consumption.
 
+config R_CIR_RX_PIN_MODE
+	int
+	default  3 if PLATFORM_H713
+	default  2
+	help
+		Pin function of the R_CIR receive pin. The H713's PL9 takes
+		s_cir as function 3 (kernel pinctrl-sun50i-h713-r.c, and the
+		measurement of 02.10.2026: the receiver counts only with 3).
+
 config R_CIR_RX_PIN
 	int
 	default  9 if PLATFORM_H6 || PLATFORM_H713

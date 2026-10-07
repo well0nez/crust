@@ -178,10 +178,11 @@ system_state_machine(uint32_t exception)
 			/* Release runtime-only devices. */
 			device_put(mailbox), mailbox = NULL;
 
-			/* Acquire wakeup sources. */
+			/* Acquire wakeup sources. The H713 module first keeps
+			 * the R_PIO state the CIR pin setup would change. */
+			h713_suspend_prepare();
 			cec = cec_get();
 			cir = cir_get();
-			h713_suspend_prepare();
 
 			/* Configure the SoC for minimal power consumption. */
 			record_step(STEP_SUSPEND_DRAM);
