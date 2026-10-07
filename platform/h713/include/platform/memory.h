@@ -136,6 +136,7 @@
 /* P: the previous run's record, ARM only; X: reserved. */
 #define H713_P_BASE          H713_PAGE(0x2d0)
 #define H713_X_BASE          H713_PAGE(0x390)
+#define H713_X_LOCK_TICKS    H713_PAGE(0x3fc) /* deep: longest PLL lock wait, 31..24 PLL, 23..0 ticks */
 
 /*
  * SB_STATE: 3..0 phase; 4 R_WDOG armed (read back); 5 request taken;
@@ -194,6 +195,15 @@
 #define H713_SUB_PLL_ON      8  /* PLL i back */
 #define H713_SUB_ROOT_BACK   9  /* root clock i back to its source */
 #define H713_SUB_MBUS        10 /* MBUS/NSI rebuild write i (ccu.c) */
+
+/*
+ * DEEP_LOCK, deep stage only, zeroed at each suspend: 11..0 the PLLs that ran
+ * before the sleep and did not lock in time, 23..16 the root clocks left on
+ * OSC24M for it. A lock failure ends in the clean reset, cause 9 (detail the
+ * first such PLL, data its register). X_LOCK_TICKS: the longest lock wait of
+ * the last resume in tick timer cycles (24 MHz), and its PLL.
+ */
+#define H713_LOCK_ROOTS      16
 
 /* ERR bits; fatal ones (4, 6..10) come with a clean reset. */
 #define H713_ERR_KEY_PIN     0

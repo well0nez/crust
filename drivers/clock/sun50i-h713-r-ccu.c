@@ -6,6 +6,7 @@
 #include <bitfield.h>
 #include <bitmap.h>
 #include <clock.h>
+#include <counter.h>
 #include <debug.h>
 #include <delay.h>
 #include <device.h>
@@ -17,6 +18,7 @@
 #include <platform/devices.h>
 #include <platform/memory.h>
 #include <platform/prcm.h>
+#include <platform/time.h>
 
 #include "ccu.h"
 
@@ -223,6 +225,21 @@ static const uint16_t pll_reg[12] = {
 static uint32_t pll_saved[12];
 
 /*
+ * The way back: PLL_PERIPH0 (the buses) first, then PLL_CPUX, then the rest
+ * (PRUEFUNG5 deep-clocks). A root clock on source 3 runs from PLL_CPUX
+ * (0x500) or PLL_PERIPH0 (the others, kernel ccu-sun50i-h713.c, D1 model).
+ * The deadline of one lock is the kernel's (ccu_helper_wait_for_lock); the
+ * H713's lock time is not measured - X_LOCK_TICKS records it.
+ */
+#define PLL_EN          BIT(31)
+#define PLL_LOCK_EN     BIT(29)
+#define PLL_LOCK        BIT(28)
+#define PLL_CPUX        0
+#define PLL_PERIPH0     2
+#define PLL_LOCK_MS     70
+static const uint8_t pll_order[12] = { 2, 0, 1, 3, 4, 5, 6, 7, 8, 9, 10, 11 };
+
+/*
  * root_saved and pll_saved hold this sleep's state: set once both are
  * saved, cleared by the restore. In .bss, so a firmware restart clears it:
  * the blob's per-root flags (0xcec0/0xce6c) left the PLLs out, and a
@@ -259,15 +276,21 @@ root_clocks_to_osc24m(void)                             /* 0xcdd8(0) */
  * The blob's order, divider first, then the source (0xce6c); each field is
  * replaced, not ORed into what the register reads, so a divider the way
  * down did not clear (a domain reset, a restart) cannot merge with the
- * saved one (PRUEFUNG5 DEEP-04).
+ * saved one (PRUEFUNG5 DEEP-04). A root whose PLL did not lock stays on
+ * OSC24M, divider 1.
  */
 static void
-root_clocks_restore(void)                               /* 0xcdd8(4) */
+root_clocks_restore(uint32_t no_lock)                   /* 0xcdd8(4) */
 {
 	for (uint8_t i = 0; i < ARRAY_SIZE(root_clk); ++i) {
+		uint8_t  pll = i ? PLL_PERIPH0 : PLL_CPUX;
 		uint32_t v;
 
 		substep(H713_SUB_ROOT_BACK, i);
+		if ((root_saved[i] >> 24 & 3) == 3 && (no_lock & BIT(pll))) {
+			mmio_set_32(H713_K_DEEP_LOCK, BIT(H713_LOCK_ROOTS + i));
+			continue;
+		}
 		v = mmio_read_32(root_clk[i]);
 		v = (v & ~ROOT_DIV) | (root_saved[i] & ROOT_DIV);
 		mmio_write_32(root_clk[i], v);
@@ -291,23 +314,53 @@ plls_off(void)                                          /* 0xcc2c(0) */
 	saved = true;
 }
 
-static void
+/*
+ * 0xcc2c(1) in pll_order, and what the blob leaves out: a PLL that ran
+ * before the sleep gets its lock detector restarted (lock enable off and
+ * on, as U-Boot and dram.c do) and its deadline, then U-Boot's 20 us.
+ * Returns the PLLs that did not lock.
+ */
+static uint32_t
 plls_restore(void)                                      /* 0xcc2c(1) */
 {
-	for (uint8_t i = 0; i < ARRAY_SIZE(pll_reg); ++i) {
-		uint32_t v;
+	uint32_t no_lock = 0, longest = 0;
+
+	for (uint8_t k = 0; k < ARRAY_SIZE(pll_order); ++k) {
+		uint8_t   i   = pll_order[k];
+		uintptr_t reg = DEV_CCU + pll_reg[i];
+		uint32_t  start, t, v;
 
 		substep(H713_SUB_PLL_ON, i);
-		v = mmio_read_32(DEV_CCU + pll_reg[i]);
-		mmio_write_32(DEV_CCU + pll_reg[i],
-		              (v & 0x5fff00fc) | pll_saved[i]);
+		v = mmio_read_32(reg);
+		mmio_write_32(reg, (v & 0x5fff00fc) | pll_saved[i]);
+		if (!(pll_saved[i] & PLL_EN))
+			continue;
+		mmio_clr_32(reg, PLL_LOCK_EN);
+		mmio_set_32(reg, PLL_LOCK_EN);
+		start = cycle_counter_read();
+		do {
+			v = mmio_read_32(reg);
+			t = cycle_counter_read() - start;
+		} while (!(v & PLL_LOCK) && t < PLL_LOCK_MS * CPUCLK_kHz);
+		if (!(v & PLL_LOCK))
+			no_lock |= BIT(i);
+		if (t > (longest & 0xffffff))
+			longest = (uint32_t)i << 24 | t;
+		if (!(pll_saved[i] & PLL_LOCK_EN))
+			mmio_clr_32(reg, PLL_LOCK_EN);
+		udelay(20);
 	}
+	mmio_set_32(H713_K_DEEP_LOCK, no_lock);
+	mmio_write_32(H713_X_LOCK_TICKS, longest);
+
+	return no_lock;
 }
 
 void __attribute__((noinline))
 r_ccu_suspend(uint8_t depth UNUSED)
 {
 	mmio_write_32(LOSC_SEEN, 0);
+	mmio_write_32(H713_K_DEEP_LOCK, 0);
 	root_clocks_to_osc24m();                                /* 0xdd30 */
 	udelay(100);
 	plls_off();                                             /* 0xdd40 */
@@ -359,10 +412,19 @@ r_ccu_resume(void)
 #endif
 	mmio_write_32(LOSC_SEEN, mmio_read_32(RTC_LOSC_CTRL));
 	if (saved) {
-		plls_restore();                                 /* 0xde7c */
+		uint32_t no_lock = plls_restore();              /* 0xde7c */
+		uint8_t  i = 0;
+
 		udelay(100);
-		root_clocks_restore();                          /* 0xde8c */
+		root_clocks_restore(no_lock);                   /* 0xde8c */
 		saved = false;
+		/* A PLL Linux ran is dead: the clean reset (cause 9). */
+		if (no_lock) {
+			while (!(no_lock & BIT(i)))
+				++i;
+			h713_fail(H713_CAUSE_PLL_LOCK, i,
+			          mmio_read_32(DEV_CCU + pll_reg[i]));
+		}
 	}
 	udelay(100);
 	cpus_clk_osc24m();      /* the blob's PLL setting is not ours */
