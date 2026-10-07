@@ -80,7 +80,9 @@ css_suspend_css(uint32_t new_state)
 	if (new_state < SCPI_CSS_OFF)
 		return;
 
-	for (uint32_t n = 0; n < MAX_CORES_PER_CLUSTER; ++n) {
+	/* the test build for stage N1b leaves them to TF-A alone */
+	for (uint32_t n = 0; n < MAX_CORES_PER_CLUSTER &&
+	     !CONFIG(H713_TEST_NO_RVBAR_KEEP); ++n) {
 		rvbar_lo[n] = mmio_read_32(ALT_RVBAR_LO_REG(n));
 		rvbar_hi[n] = mmio_read_32(ALT_RVBAR_HI_REG(n));
 	}
@@ -136,7 +138,8 @@ css_resume_css(uint32_t old_state)
 	for (uint32_t n = 1; n < MAX_CORES_PER_CLUSTER; ++n)
 		mmio_write_32(RVBAR_SEEN_BASE + 4 * (n - 1),
 		              mmio_read_32(ALT_RVBAR_LO_REG(n)));
-	for (uint32_t n = 0; n < MAX_CORES_PER_CLUSTER; ++n) {
+	for (uint32_t n = 0; n < MAX_CORES_PER_CLUSTER &&
+	     !CONFIG(H713_TEST_NO_RVBAR_KEEP); ++n) {
 		mmio_write_32(ALT_RVBAR_LO_REG(n), rvbar_lo[n]);
 		mmio_write_32(ALT_RVBAR_HI_REG(n), rvbar_hi[n]);
 	}

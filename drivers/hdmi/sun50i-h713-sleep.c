@@ -108,6 +108,9 @@ tick(void)
 static void
 feed(void)
 {
+	if (CONFIG(H713_TEST_STARVE_NET) && phase() == H713_PH_SLEEP &&
+	    mmio_read_32(H713_K_NET_MS) >= 2000)
+		return;
 	h713_rwdog_feed();
 	feed_next = cycle_counter_read() + FEED_MS * MS;
 }

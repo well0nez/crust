@@ -131,6 +131,28 @@ config H713_TEST
 		purpose. The kernel reports the bit as a test build; the
 		release gates refuse it.
 
+if H713_TEST
+
+config H713_TEST_STARVE_NET
+	bool "Stop feeding the sleep net 2 s into the sleep (stage N2)"
+	depends on H713_SLEEP_NET
+
+config H713_TEST_PORT3_SILENT
+	bool "Stop reading port 3 once a request is taken (stage N4)"
+	help
+		TF-A's cpu op req then stays in the FIFO, and its suspend
+		error path has to reset the SoC; else the presleep budget
+		does.
+
+config H713_TEST_NO_RVBAR_KEEP
+	bool "Leave the cores' start addresses to TF-A (stage N1b)"
+	help
+		The cluster up does not write back ALT_RVBAR of the four
+		cores (0030); TF-A's cpu_on has to. The record of what the
+		cluster up left (H713_SEEN_RVBAR) stays.
+
+endif
+
 if H713_DRAM_SELF_REFRESH
 
 config H713_DRAM_CLK

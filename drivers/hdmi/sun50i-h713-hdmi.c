@@ -881,7 +881,10 @@ h713_poll(void)
 	 * TF-A's cpu op req must never wait behind an unread reply. Read
 	 * before channel 3 is refilled, so a request that clears the queue
 	 * (sb_frame) does so before stale words reach the emptied FIFO. */
-	while (msgbox_receive(&msgbox.dev, PORT_STANDBY, &w) == SUCCESS)
+	while (!(CONFIG(H713_TEST_PORT3_SILENT) &&
+	         (mmio_read_32(H713_K_SB_STATE) & H713_SB_PHASE) ==
+	         H713_PH_PRESLEEP) &&
+	       msgbox_receive(&msgbox.dev, PORT_STANDBY, &w) == SUCCESS)
 		sb_word(w);
 	q_drain(Q_NOTIFY);
 	/* The pump one request at a time: the next after the last reply left. */
