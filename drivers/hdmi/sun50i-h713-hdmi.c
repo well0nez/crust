@@ -1174,6 +1174,17 @@ h713_resume_done(void)
 	/* The HPD tick did not run asleep: a deadline from before the standby
 	 * would not expire for up to 89 s after a long one. */
 	hpd_deadline = timeout_set(HPD_TICK_US);
+	/*
+	 * The transfers start fresh: a frame the MIPS left half-sent before
+	 * it was parked would take the next one's header as payload, and a
+	 * reply's stall deadline from before a long sleep would hold port 0
+	 * (PRUEFUNG5 F11, F16 d).
+	 */
+	for (uint8_t q = 0; q < ARRAY_SIZE(mips); ++q)
+		mips[q].state = 0;
+	pump_state = 0;
+	for (uint8_t q = 0; q < Q_COUNT; ++q)
+		q_stall[q] = timeout_set(TXQ_STALL_US);
 	/* one standby per arming, as the vendor's 0x26 */
 	mmio_write_32(H713_DIAG_WAKE_TIMER, 0);
 	info("H713: resumed, wake word %x", mmio_read_32(SH_WAKE));
