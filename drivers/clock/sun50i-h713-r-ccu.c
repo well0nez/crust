@@ -232,12 +232,21 @@ static uint32_t pll_saved[12];
  */
 static bool saved;
 
+/* Before each step of the deep path: what and which (platform/memory.h). */
+static void
+substep(uint8_t step, uint8_t i)
+{
+	mmio_write_32(H713_K_SUBSTEP, H713_SUB(step, i));
+}
+
 static void
 root_clocks_to_osc24m(void)                             /* 0xcdd8(0) */
 {
 	for (uint8_t i = 0; i < ARRAY_SIZE(root_clk); ++i) {
-		uint32_t v = mmio_read_32(root_clk[i]);
+		uint32_t v;
 
+		substep(H713_SUB_ROOT_OSC, i);
+		v = mmio_read_32(root_clk[i]);
 		root_saved[i] = v & (ROOT_SRC | ROOT_DIV);      /* 0xcec0 */
 		v &= ~ROOT_SRC;                                 /* source 0 */
 		mmio_write_32(root_clk[i], v);                  /* 0xcefc */
@@ -256,8 +265,10 @@ static void
 root_clocks_restore(void)                               /* 0xcdd8(4) */
 {
 	for (uint8_t i = 0; i < ARRAY_SIZE(root_clk); ++i) {
-		uint32_t v = mmio_read_32(root_clk[i]);
+		uint32_t v;
 
+		substep(H713_SUB_ROOT_BACK, i);
+		v = mmio_read_32(root_clk[i]);
 		v = (v & ~ROOT_DIV) | (root_saved[i] & ROOT_DIV);
 		mmio_write_32(root_clk[i], v);
 		v = (v & ~ROOT_SRC) | (root_saved[i] & ROOT_SRC);
@@ -270,8 +281,10 @@ static void
 plls_off(void)                                          /* 0xcc2c(0) */
 {
 	for (uint8_t i = 0; i < ARRAY_SIZE(pll_reg); ++i) {
-		uint32_t v = mmio_read_32(DEV_CCU + pll_reg[i]);
+		uint32_t v;
 
+		substep(H713_SUB_PLL_OFF, i);
+		v = mmio_read_32(DEV_CCU + pll_reg[i]);
 		pll_saved[i] = v & 0xa000ff03;   /* enable, lock-en, N, M */
 		mmio_write_32(DEV_CCU + pll_reg[i], v & 0x7fffffff);
 	}
@@ -282,8 +295,10 @@ static void
 plls_restore(void)                                      /* 0xcc2c(1) */
 {
 	for (uint8_t i = 0; i < ARRAY_SIZE(pll_reg); ++i) {
-		uint32_t v = mmio_read_32(DEV_CCU + pll_reg[i]);
+		uint32_t v;
 
+		substep(H713_SUB_PLL_ON, i);
+		v = mmio_read_32(DEV_CCU + pll_reg[i]);
 		mmio_write_32(DEV_CCU + pll_reg[i],
 		              (v & 0x5fff00fc) | pll_saved[i]);
 	}
@@ -298,6 +313,7 @@ r_ccu_suspend(uint8_t depth UNUSED)
 	plls_off();                                             /* 0xdd40 */
 	udelay(100);
 #if CONFIG(H713_DEEP_PLL_LDO)
+	substep(H713_SUB_LDO_OFF, 0);
 	uint32_t v = (mmio_read_32(PLL_CTRL_REG1) & ~PLL_CTRL_REG1_LDO_EN) |
 	             PLL_CTRL_REG1_KEY;                         /* 0xddbc */
 
@@ -314,6 +330,7 @@ r_ccu_suspend(uint8_t depth UNUSED)
 	 * comment here said the blob skips it for power_down. Not checked
 	 * against the disassembly (PRUEFUNG5 DEEP-02).
 	 */
+	substep(H713_SUB_DOMAIN_OFF, 0);
 	mmio_clr_32(VDD_SYS_RESET_REG, VDD_SYS_RESET);
 	mmio_set_32(VDD_SYS_PWROFF_GATING_REG, AVCC_GATING);
 	mmio_set_32(VDD_SYS_PWROFF_GATING_REG, UNK_GATING_BIT_08);
@@ -325,12 +342,14 @@ r_ccu_resume(void)
 {
 #if CONFIG(H713_DEEP_VDD_SYS)
 	/* 0xe3a8 */
+	substep(H713_SUB_DOMAIN_ON, 0);
 	mmio_clr_32(VDD_SYS_PWROFF_GATING_REG, UNK_GATING_BIT_08);
 	mmio_clr_32(VDD_SYS_PWROFF_GATING_REG, AVCC_GATING);
 	mmio_set_32(VDD_SYS_RESET_REG, VDD_SYS_RESET);
 #endif
 #if CONFIG(H713_DEEP_PLL_LDO)
 	/* 0xddec */
+	substep(H713_SUB_LDO_ON, 0);
 	uint32_t v = mmio_read_32(PLL_CTRL_REG1) | PLL_CTRL_REG1_KEY |
 	             PLL_CTRL_REG1_LDO_EN;
 

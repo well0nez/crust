@@ -12,6 +12,7 @@
 #include <mmio.h>
 #include <util.h>
 #include <platform/devices.h>
+#include <platform/memory.h>
 
 #include "ccu.h"
 
@@ -84,6 +85,13 @@ const struct ccu ccu = {
 #if CONFIG(H713_DEEP_SLEEP)
 static uint32_t mbus_saved;
 
+/* Before each write of the rebuild: SUBSTEP (platform/memory.h, DEEP-07). */
+static void
+mbus_step(uint8_t i)
+{
+	mmio_write_32(H713_K_SUBSTEP, H713_SUB(H713_SUB_MBUS, i));
+}
+
 /* 0xe164: the blob keeps MBUS (0x540) and PLL_PERIPH0 before the DRAM goes. */
 void __attribute__((noinline))
 ccu_suspend(void)
@@ -99,33 +107,47 @@ ccu_suspend(void)
 void __attribute__((noinline))
 ccu_resume(void)
 {
+	mbus_step(1);
 	mmio_write_32(DEV_CCU + 0x540, BIT(31));                /* 0xe40c */
 	udelay(1);
+	mbus_step(2);
 	mmio_clr_32(DEV_CCU + 0x540, BIT(30));                  /* 0xe430 */
 	udelay(1);
+	mbus_step(3);
 	mmio_set_32(DEV_CCU + 0xdd8, BIT(0));                   /* 0xe444 */
 	udelay(1);
+	mbus_step(4);
 	mmio_set_32(DEV_CCU + 0xdd8, BIT(16));                  /* 0xe45c */
 	udelay(1);
+	mbus_step(5);
 	mmio_set_32(DEV_TVTOP + 0x40, BIT(4));                  /* 0xe478 */
 	udelay(1);
+	mbus_step(6);
 	mmio_set_32(DEV_TVTOP + 0x44, BIT(4));                  /* 0xe494 */
 	udelay(1);
+	mbus_step(7);
 	mmio_set_32(DEV_TVTOP + 0x80, BIT(4));                  /* 0xe4a8 */
 	udelay(1);
+	mbus_step(8);
 	mmio_set_32(DEV_CCU + 0x540, BIT(1));                   /* 0xe4bc */
 	udelay(1);
+	mbus_step(9);
 	mmio_set_32(DEV_CCU + 0x540, 0x03000000);               /* 0xe4d4 */
 	udelay(1);
+	mbus_step(10);
 	mmio_set_32(DEV_CCU + 0x540, BIT(30));                  /* 0xe4ec */
 	udelay(1);
 	/* 37005, 0xe6e0 */
+	mbus_step(11);
 	mmio_write_32(DEV_CCU + 0x540, mbus_saved & 0x7);
 	udelay(200);
+	mbus_step(12);
 	mmio_write_32(DEV_CCU + 0x540, mbus_saved & 0x03000007);
 	udelay(20);
+	mbus_step(13);
 	mmio_set_32(DEV_CCU + 0x540, BIT(31));
 	udelay(20);
+	mbus_step(14);
 	mmio_set_32(DEV_CCU + 0x540, BIT(30));
 	udelay(10000);
 }

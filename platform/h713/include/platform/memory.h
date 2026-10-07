@@ -179,6 +179,22 @@
 #define H713_POLL_CPU_OFF    5  /* core 0 power switch off (css.c) */
 #define H713_POLL_CPU_ON     6  /* core 0 power switch on */
 
+/*
+ * SUBSTEP, deep stage only: written before each clock and bus step of the
+ * deep path, 15..8 the step, 7..0 its index, so a hang or a reset in it
+ * names the register (PRUEFUNG5 DEEP-07). A good cycle leaves the last one.
+ */
+#define H713_SUB(step, i)    ((step) << 8 | (i))
+#define H713_SUB_ROOT_OSC    2  /* root clock i to OSC24M (r-ccu.c root_clk[]) */
+#define H713_SUB_PLL_OFF     3  /* PLL i off (r-ccu.c pll_reg[]) */
+#define H713_SUB_LDO_OFF     4
+#define H713_SUB_DOMAIN_OFF  5  /* 0 VDD_SYS reset and gating */
+#define H713_SUB_DOMAIN_ON   6  /* 0 VDD_SYS ungated and out of reset */
+#define H713_SUB_LDO_ON      7
+#define H713_SUB_PLL_ON      8  /* PLL i back */
+#define H713_SUB_ROOT_BACK   9  /* root clock i back to its source */
+#define H713_SUB_MBUS        10 /* MBUS/NSI rebuild write i (ccu.c) */
+
 /* ERR bits; fatal ones (4, 6..10) come with a clean reset. */
 #define H713_ERR_KEY_PIN     0
 #define H713_ERR_CIR         1
