@@ -202,7 +202,6 @@ static uint8_t  sb_n, sb_count;
 static uint32_t sb_hdr, sb_data[8];
 static uint32_t hpd_deadline, key_deadline, ms_deadline, sb_deadline;
 static bool     wake_armed;	/* .bss: false again after a firmware restart */
-static bool     woke;		/* a resume since the last 0x11 */
 /*
  * The power key asleep: ENTRY until it reads high once (a key held when
  * the standby began is not a press), ARMED until KEY_DEBOUNCE low samples,
@@ -822,10 +821,12 @@ sb_frame(void)
 		 * TF-A's cpu op req (an abort after the noirq phase), the word
 		 * of the previous standby must not come back as this one's;
 		 * the answer is 0 then, and a timer armed for it is cleared.
+		 * The word waits in K (h713_resume_done()), where a restart
+		 * in RESUMING does not clear it.
 		 */
-		uint32_t wake = woke ? mmio_read_32(SH_WAKE) : 0;
+		uint32_t wake = mmio_read_32(H713_K_WAKE_KEPT);
 
-		woke = false;
+		mmio_write_32(H713_K_WAKE_KEPT, 0);
 		mmio_write_32(H713_DIAG_WAKE_TIMER, 0);
 		h713_sleep_event(H713_EV_RESTORE);
 		sb_reply(type, 0, &wake, 1);
@@ -969,6 +970,7 @@ h713_init(void)
 		if (a < H713_K_LIMIT || a >= H713_X_BASE)
 			mmio_write_32(a, 0);
 	}
+	mmio_write_32(SH_WAKE, mmio_read_32(H713_K_WAKE_KEPT));	/* 0x11 to come */
 	h713_sleep_init(first);
 	mmio_write_32(DIAG_CPUS_CLK, r_ccu_cpus_clk_at_boot());
 	mmio_write_32(DIAG_INITS, mmio_read_32(DIAG_INITS) + 1);
@@ -1233,7 +1235,7 @@ h713_resume_done(void)
 	mmio_write_32(EINT_SEEN_AFTER, mmio_read_32(R_PIO_EINT_STATUS));
 	mmio_write_32(R_PIO_EINT_STATUS, key_bit);
 	sh_status(0, ST_ASLEEP);
-	woke = true;
+	mmio_write_32(H713_K_WAKE_KEPT, mmio_read_32(SH_WAKE));	/* for 0x11 */
 	/* The HPD tick did not run asleep: a deadline from before the standby
 	 * would not expire for up to 89 s after a long one. */
 	hpd_deadline = timeout_set(HPD_TICK_US);

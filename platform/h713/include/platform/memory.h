@@ -125,6 +125,7 @@
 #define H713_K_DRAM_PLL      H713_PAGE(0x2a4) /* PLL_DDR0 when a request came in */
 #define H713_K_SUBSTEP       H713_PAGE(0x2a8) /* deep stage only */
 #define H713_K_DEEP_LOCK     H713_PAGE(0x2ac) /* deep stage only */
+#define H713_K_WAKE_KEPT     H713_PAGE(0x2b0) /* the last resume's wake word, until 0x11 */
 #define H713_K_LIMIT         H713_PAGE(0x2c0)
 
 /* A: written by the ARM, read by crust. */

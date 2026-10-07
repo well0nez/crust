@@ -175,6 +175,8 @@ h713_sleep_request(void)
 		return;
 	}
 	mmio_write_32(H713_K_CYCLE, cycle);
+	/* a wake word no 0x11 took is not this cycle's */
+	mmio_write_32(H713_K_WAKE_KEPT, 0);
 	mmio_write_32(H713_K_NET_ACC,
 	              budget(bud & 0xffff) | budget(bud >> 16) << 16);
 	st = (st & H713_SB_CAUSE) | H713_SB_TAKEN | (cycle & 0xff) << 8;
