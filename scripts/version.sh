@@ -7,11 +7,16 @@
 major=0
 minor=6
 patch=10000
+hash=unknown
 
 srcdir=$1
 output=$2
 
 if test "$srcdir" = "$(git -C "$srcdir" rev-parse --show-toplevel 2>/dev/null)"; then
+  if h=$(git -C "$srcdir" rev-parse --short=12 HEAD 2>/dev/null); then
+    hash=g$h
+  fi
+
   set -- $(git -C "$srcdir" describe --dirty --long --match 'v[0-9]*' | tr '.-' '  ')
 
   if test "$#" -ge 4; then
@@ -22,6 +27,7 @@ if test "$srcdir" = "$(git -C "$srcdir" rev-parse --show-toplevel 2>/dev/null)";
 
   if test "$#" -ge 5 && test "$5" = "dirty"; then
     patch=$((patch+10000))
+    hash=$hash-dirty
   fi
 fi
 
@@ -32,6 +38,7 @@ cat > "$output.tmp" << EOF
 #define VERSION_MINOR $minor
 #define VERSION_PATCH $patch
 #define VERSION_STRING "v${major}.${minor}.${patch}"
+#define VERSION_HASH "${hash}"
 EOF
 
 if ! test -f "$output" ||

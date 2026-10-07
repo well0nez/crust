@@ -762,12 +762,18 @@ sb_word(uint32_t w)
 }
 
 /* Startup notify (blob 0xc4b0): 13 words of version text in the odd byte
- * order that the driver's arisc_notify_version() undoes. */
+ * order that the driver's arisc_notify_version() undoes; byte 48 is never
+ * sent, so the text has 48 characters at most. The contract version in it
+ * is H713_VERSION's; the commit and a dirty tree come from version.sh. */
 static void
 send_notify(void)
 {
-	static const char version[] = "crust-h713 contract v1 " VERSION_STRING;
+	static const char version[] = "crust-h713 v5 " VERSION_STRING "-"
+	                              VERSION_HASH;
 	uint8_t s[52];
+
+	static_assert(sizeof(version) <= 48 + 1, "notify text too long");
+	static_assert(H713_VERSION == 5, "notify text names version 5");
 
 	for (uint8_t i = 0, end = 0; i < sizeof(s); ++i) {
 		end = end || !version[i];	/* never read past the NUL */
