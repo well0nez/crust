@@ -199,7 +199,7 @@
 #define H713_ERR_RWDOG_RESET 16
 
 /* Counter bytes for h713_cnt(), at the byte the ARM reads them from. */
-#define H713_CNT_SB_DROP     (H713_K_CNT0 + 0) /* port 3 words dropped */
+#define H713_CNT_SB_DROP     (H713_K_CNT0 + 0) /* port 3 words, partial frames dropped */
 #define H713_CNT_PUMP_LONG   (H713_K_CNT0 + 1) /* pump frame > 67 bytes */
 #define H713_CNT_ARM_UNKNOWN (H713_K_CNT0 + 2) /* ARM type, sub-command, no answer */
 #define H713_CNT_TXQ_FULL    (H713_K_CNT0 + 3) /* tx queue full, answer lost */

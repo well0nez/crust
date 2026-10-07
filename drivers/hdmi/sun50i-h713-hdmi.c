@@ -175,6 +175,7 @@
 #define CPU_OP_DELAY_US 50000
 #define KEY_POLL_US     20000
 #define KEY_DEBOUNCE    3
+#define SB_FRAME_US     100000 /* a port 3 frame not complete by then is dropped */
 
 static uint8_t  edid[2 * EDID_BLOCK];
 static bool     edid_valid;	/* .bss: no upload since this start */
@@ -197,7 +198,7 @@ static uint8_t  seq;
 static uint8_t  pump_state, pump_len, pump_idx, pump_type;
 static uint8_t  sb_n, sb_count;
 static uint32_t sb_hdr, sb_data[8];
-static uint32_t hpd_deadline, key_deadline, ms_deadline;
+static uint32_t hpd_deadline, key_deadline, ms_deadline, sb_deadline;
 static bool     wake_armed;	/* .bss: false again after a firmware restart */
 static bool     woke;		/* a resume since the last 0x11 */
 static uint8_t  key_low;
@@ -809,14 +810,54 @@ sb_frame(void)
 	}
 }
 
+/*
+ * Resynchronisation (PRUEFUNG5 F7, K15): a frame the ARM left half-sent -
+ * a push that failed after the header, a firmware restart with words in
+ * the FIFO - shifted every later frame, and standby requests failed until
+ * the stream realigned by chance. A header now needs state 0 or 2 and a
+ * type this dispatcher knows, a count of at most 8 words, and the frame
+ * must be complete within SB_FRAME_US; anything else is dropped (error
+ * bit 3 with the position and the word, CNT0[7:0]) and the next word is
+ * looked at as a header.
+ */
+static bool
+sb_head(uint32_t w)
+{
+	uint8_t state = w & 0xff, type = w >> 16;
+
+	return (state == 0 || state == SB_STATE) &&
+	       (type == TYPE_RESTORE || type == TYPE_CPU_OP ||
+	        type == TYPE_WAKE_CLR || type == TYPE_WAKE_SET ||
+	        type == TYPE_NOTIFY);
+}
+
+static void
+sb_drop(uint32_t w)
+{
+	h713_err(H713_ERR_SB_DROP, sb_n, w);
+	h713_cnt(H713_CNT_SB_DROP);
+	sb_n = 0;
+}
+
 static void
 sb_word(uint32_t w)
 {
+	if (sb_n && passed(sb_deadline))
+		sb_drop(sb_hdr);
 	if (sb_n == 0) {
+		if (!sb_head(w)) {
+			sb_drop(w);
+			return;
+		}
 		sb_hdr = w;
+		sb_deadline = timeout_set(SB_FRAME_US);
 	} else if (sb_n == 1) {
 		sb_count = w & 0xff;
-	} else if (sb_n < 2 + ARRAY_SIZE(sb_data)) {
+		if (sb_count > ARRAY_SIZE(sb_data)) {
+			sb_drop(w);
+			return;
+		}
+	} else {
 		sb_data[sb_n - 2] = w;
 	}
 	++sb_n;
