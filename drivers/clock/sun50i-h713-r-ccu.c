@@ -356,6 +356,38 @@ plls_restore(void)                                      /* 0xcc2c(1) */
 	return no_lock;
 }
 
+#if CONFIG(H713_DEEP_PLL_LDO)
+/*
+ * 0xddbc (off) and 0xddec (on), the blob's two keyed writes. The key field
+ * is cleared before the key goes in, as upstream's write_pll_ctrl_reg1()
+ * does, so a key left in it cannot mix with ours; CRYSTAL_EN and the LDO
+ * output stay as they are (PRUEFUNG5 deep-clocks D3).
+ */
+static void
+pll_ldo(bool on)
+{
+	uint32_t v = mmio_read_32(PLL_CTRL_REG1) &
+	             ~(PLL_CTRL_REG1_KEY_FIELD | PLL_CTRL_REG1_LDO_EN);
+
+	v |= PLL_CTRL_REG1_KEY | (on ? PLL_CTRL_REG1_LDO_EN : 0);
+	mmio_write_32(PLL_CTRL_REG1, v);
+	mmio_write_32(PLL_CTRL_REG1, v);
+	udelay(100);
+}
+
+/* The LDO feeds the PLLs: it goes off only when every one reads off. */
+static bool
+plls_all_off(void)
+{
+	for (uint8_t i = 0; i < ARRAY_SIZE(pll_reg); ++i) {
+		if (mmio_read_32(DEV_CCU + pll_reg[i]) & PLL_EN)
+			return false;
+	}
+
+	return true;
+}
+#endif
+
 void __attribute__((noinline))
 r_ccu_suspend(uint8_t depth UNUSED)
 {
@@ -367,12 +399,10 @@ r_ccu_suspend(uint8_t depth UNUSED)
 	udelay(100);
 #if CONFIG(H713_DEEP_PLL_LDO)
 	substep(H713_SUB_LDO_OFF, 0);
-	uint32_t v = (mmio_read_32(PLL_CTRL_REG1) & ~PLL_CTRL_REG1_LDO_EN) |
-	             PLL_CTRL_REG1_KEY;                         /* 0xddbc */
-
-	mmio_write_32(PLL_CTRL_REG1, v);
-	mmio_write_32(PLL_CTRL_REG1, v);
-	udelay(100);
+	if (plls_all_off())
+		pll_ldo(false);                                 /* 0xddbc */
+	else
+		mmio_set_32(H713_K_DEEP_LOCK, BIT(H713_LOCK_LDO_KEPT));
 #endif
 #if CONFIG(H713_DEEP_VDD_SYS)
 	/*
@@ -401,14 +431,8 @@ r_ccu_resume(void)
 	mmio_set_32(VDD_SYS_RESET_REG, VDD_SYS_RESET);
 #endif
 #if CONFIG(H713_DEEP_PLL_LDO)
-	/* 0xddec */
 	substep(H713_SUB_LDO_ON, 0);
-	uint32_t v = mmio_read_32(PLL_CTRL_REG1) | PLL_CTRL_REG1_KEY |
-	             PLL_CTRL_REG1_LDO_EN;
-
-	mmio_write_32(PLL_CTRL_REG1, v);
-	mmio_write_32(PLL_CTRL_REG1, v);
-	udelay(100);
+	pll_ldo(true);                                          /* 0xddec */
 #endif
 	mmio_write_32(LOSC_SEEN, mmio_read_32(RTC_LOSC_CTRL));
 	if (saved) {

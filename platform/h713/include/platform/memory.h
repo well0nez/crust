@@ -199,11 +199,13 @@
 /*
  * DEEP_LOCK, deep stage only, zeroed at each suspend: 11..0 the PLLs that ran
  * before the sleep and did not lock in time, 23..16 the root clocks left on
- * OSC24M for it. A lock failure ends in the clean reset, cause 9 (detail the
- * first such PLL, data its register). X_LOCK_TICKS: the longest lock wait of
- * the last resume in tick timer cycles (24 MHz), and its PLL.
+ * OSC24M for it, 31 the PLL LDO left on because a PLL still read enabled
+ * (H713_DEEP_PLL_LDO). A lock failure ends in the clean reset, cause 9
+ * (detail the first such PLL, data its register). X_LOCK_TICKS: the longest
+ * lock wait of the last resume in tick timer cycles (24 MHz), and its PLL.
  */
 #define H713_LOCK_ROOTS      16
+#define H713_LOCK_LDO_KEPT   31
 
 /* ERR bits; fatal ones (4, 6..10) come with a clean reset. */
 #define H713_ERR_KEY_PIN     0
