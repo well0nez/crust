@@ -369,8 +369,10 @@ h713_fail(uint8_t cause, uint8_t detail, uint32_t data)
 		mmio_clr_32(VDD_SYS_PWROFF_GATING_REG,
 		            AVCC_GATING | UNK_GATING_BIT_08);
 	if (CONFIG(H713_DEEP_PLL_LDO)) {
-		uint32_t v = mmio_read_32(PLL_CTRL_REG1) | PLL_CTRL_REG1_KEY |
-		             PLL_CTRL_REG1_LDO_EN;
+		/* the key field cleared first, as r-ccu.c's pll_ldo() */
+		uint32_t v = (mmio_read_32(PLL_CTRL_REG1) &
+		              ~PLL_CTRL_REG1_KEY_FIELD) |
+		             PLL_CTRL_REG1_KEY | PLL_CTRL_REG1_LDO_EN;
 
 		mmio_write_32(PLL_CTRL_REG1, v);
 		mmio_write_32(PLL_CTRL_REG1, v);
