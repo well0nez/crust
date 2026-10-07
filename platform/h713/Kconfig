@@ -40,4 +40,74 @@ config H713_RAILS_PIN
 		is unmeasured (FB-STANDBY 7.5), so the default never
 		touches the pin.
 
+config H713_DRAM_SELF_REFRESH
+	bool "Put the DRAM into self-refresh in standby (vendor V1.15 port)"
+	help
+		The vendor ARISC firmware's DRAM standby driver (blob
+		0x142dc enter, 0x145b0 exit), ported register by register
+		and checked against the blob in an offline model only. Off,
+		standby leaves the DRAM clocked ("light standby"). The DRAM
+		parameters below must be the ones the boot loader trained
+		the DRAM with.
+
+if H713_DRAM_SELF_REFRESH
+
+config H713_DRAM_CLK
+	int "DRAM clock in MHz (U-Boot CONFIG_DRAM_CLK)"
+	default 792
+
+config H713_DRAM_TYPE
+	int "DRAM type (3 DDR3, 6 LPDDR2, 7 LPDDR3)"
+	default 3
+
+config H713_DRAM_ZQ
+	hex "dram_para.zq"
+	default 0x007b7bfb
+
+config H713_DRAM_ODT_EN
+	hex "dram_para.odt_en"
+	default 0x1
+
+config H713_DRAM_PARA1
+	hex "dram_para.para1"
+	default 0x000010f4
+
+config H713_DRAM_PARA2
+	hex "dram_para.para2"
+	default 0x04000000
+
+config H713_DRAM_MR0
+	hex "dram_para.mr0"
+	default 0x1c70
+
+config H713_DRAM_MR1
+	hex "dram_para.mr1"
+	default 0x40
+
+config H713_DRAM_MR2
+	hex "dram_para.mr2"
+	default 0x18
+
+config H713_DRAM_MR3
+	hex "dram_para.mr3"
+	default 0x0
+
+config H713_DRAM_TPR5
+	hex "dram_para.tpr5"
+	default 0x48484848
+
+config H713_DRAM_TPR6
+	hex "dram_para.tpr6"
+	default 0x48
+
+config H713_DRAM_TPR9
+	hex "dram_para.tpr9"
+	default 0x0
+
+config H713_DRAM_TPR13
+	hex "dram_para.tpr13"
+	default 0xb4016103
+
+endif
+
 endif
