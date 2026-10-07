@@ -24,7 +24,9 @@
  *
  * user0 sub-block 0 : ARISC -> ARM (the driver's "msgbox-rx", ch 0..3)
  * user1 sub-block 0 : ARM -> ARISC (the driver's "msgbox-tx", port 0..3)
- * user0/1 sub-block 1, user2: the MIPS's pairs (cpu_comm), not ours.
+ * user1 sub-block 1 : display MIPS -> ARISC ("DispMips"); the H713 HDMI
+ *                     module reads it directly, not through this driver
+ * user0 sub-block 1, user2: the MIPS's pairs with the ARM (cpu_comm).
  *
  * Crust channel numbering: even n = receive from ARM port n/2, odd n = send
  * to ARM channel n/2. There is no "last tx done" flag on this box: the FIFO

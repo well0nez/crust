@@ -66,7 +66,7 @@
 #define DIAG_LEWIN_EN   (H713_DIAG_BASE + 0x00)    /* written by start.S */
 #define DIAG_CPUS_CLK   (H713_DIAG_BASE + 0x0c)
 #define DIAG_TTCR       (H713_DIAG_BASE + 0x10)
-#define DIAG_INITS      (H713_DIAG_BASE + 0x14)
+#define DIAG_INITS      H713_DIAG_INITS
 #define DIAG_INTC_80    (H713_DIAG_BASE + 0x18)
 #define DIAG_INTC_88    (H713_DIAG_BASE + 0x1c)
 #define DIAG_MIPS_N     (H713_DIAG_BASE + 0x20)    /* frames from the MIPS */
@@ -125,15 +125,14 @@
 #define R_PIO_EINT_STATUS (DEV_R_PIO + 0x214) /* PL bank (IRQ bank 0), W1C */
 #define R_PIO_EINT_DEB  (DEV_R_PIO + 0x218)    /* PL bank debounce clock */
 /*
- * Behind the cores' start addresses (sun50i-h713-css.c, +0x240..+0x24b):
- * the PL bank's EINT status at four points of h713_resume_done() (0032;
+ * The PL bank's EINT status at four points of h713_resume_done() (0032;
  * read through /dev/mem): before the switch back, right after it, after
  * the settle time, and one settle time after the clear.
  */
-#define EINT_SEEN_BEFORE  (H713_SHARED_BASE + 0x24c)
-#define EINT_SEEN_SWITCH  (H713_SHARED_BASE + 0x250)
-#define EINT_SEEN_SETTLED (H713_SHARED_BASE + 0x254)
-#define EINT_SEEN_AFTER   (H713_SHARED_BASE + 0x258)
+#define EINT_SEEN_BEFORE  (H713_SEEN_EINT + 0x0)
+#define EINT_SEEN_SWITCH  (H713_SEEN_EINT + 0x4)
+#define EINT_SEEN_SETTLED (H713_SEEN_EINT + 0x8)
+#define EINT_SEEN_AFTER   (H713_SEEN_EINT + 0xc)
 
 #define BOP_MARKER      0xa5
 #define BOP_MAX_LEN     128

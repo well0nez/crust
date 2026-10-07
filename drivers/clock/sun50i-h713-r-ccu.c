@@ -194,9 +194,8 @@ cpus_clk_osc24m(void)
 #define KEY_16AA        0x16aa0000
 #define LOSC_EXT_EN     BIT(4)  /* the 32k crystal's oscillator on */
 #define LOSC_EXT_SEL    BIT(0)  /* LOSC from the crystal, not the RC */
-/* LOSC_CTRL after the resume, for the device test (0033; behind the
- * power key words of sun50i-h713-hdmi.c, +0x24c..+0x25b). */
-#define LOSC_SEEN       (H713_SHARED_BASE + 0x25c)
+/* LOSC_CTRL after the resume, for the device test (0033). */
+#define LOSC_SEEN       H713_SEEN_LOSC
 
 /*
  * What Linux had before the sleep. The blob turns the 32k crystal on and

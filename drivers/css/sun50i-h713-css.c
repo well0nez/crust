@@ -46,10 +46,10 @@ static uint32_t warm_entry_lo, warm_entry_hi;
  * blob restores only core 0, since the vendor BL31 does the rest. So the
  * four start addresses are saved before the cluster goes down and written
  * back after it is up again. What the cluster up left in them is kept for
- * the record at H713_SHARED_BASE + 0x240 (cores 1..3, low words), so the
- * next run shows whether the reset cleared them.
+ * the record at H713_SEEN_RVBAR (cores 1..3, low words), so the next run
+ * shows whether the reset cleared them.
  */
-#define RVBAR_SEEN_BASE         (H713_SHARED_BASE + 0x240)
+#define RVBAR_SEEN_BASE         H713_SEEN_RVBAR
 static uint32_t rvbar_lo[MAX_CORES_PER_CLUSTER], rvbar_hi[MAX_CORES_PER_CLUSTER];
 
 void
