@@ -27,6 +27,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <util.h>
+#include <dram/sun50i-h713-dram.h>
 #include <hdmi/sun50i-h713-hdmi.h>
 #include <platform/devices.h>
 #include <platform/memory.h>
@@ -139,7 +140,7 @@ h713_sleep_request(void)
 {
 	uint32_t req = mmio_read_32(H713_A_NET_REQ);
 	uint32_t bud = mmio_read_32(H713_A_NET_BUDGET);
-	uint32_t cycle = mmio_read_32(H713_K_CYCLE) + 1, st = state();
+	uint32_t cycle = mmio_read_32(H713_K_CYCLE) + 1, st = state(), pll;
 	uint8_t  fmt = req >> 16, ph = st & H713_SB_PHASE, why = 0;
 
 	if (!req)
@@ -154,6 +155,14 @@ h713_sleep_request(void)
 		why = 4;
 	if (why) {
 		h713_err(H713_ERR_NET_REQ, why, req);
+		return;
+	}
+	/* The DRAM clock the self-refresh exit will set: on a mismatch the
+	 * request is not taken, and the kernel refuses the standby. */
+	why = !h713_dram_clk_ok(&pll);
+	mmio_write_32(H713_K_DRAM_PLL, pll);
+	if (why) {
+		h713_err(H713_ERR_DRAM_PLL, 0, pll);
 		return;
 	}
 	mmio_write_32(H713_K_CYCLE, cycle);

@@ -456,6 +456,20 @@ h713_dram_error(void)
 	return phy_error;
 }
 
+/*
+ * The exit side programs PLL_DDR0 from para.clk (pll_ddr_init, as boot0
+ * and U-Boot do), so a para.clk other than the boot loader's would bring
+ * the DRAM back at another clock than it was trained for (PRUEFUNG5 F6,
+ * CS-17). Checked when the kernel's request is taken, before the sleep.
+ */
+bool
+h713_dram_clk_ok(uint32_t *pll)
+{
+	*pll = mmio_read_32(PLL_DDR0);
+
+	return ((*pll >> 8) & 0xff) + 1 == para.clk * 2 / 24;
+}
+
 #else /* !CONFIG(H713_DRAM_SELF_REFRESH): light standby, the DRAM stays on */
 
 void
@@ -472,6 +486,14 @@ uint32_t
 h713_dram_error(void)
 {
 	return 0;
+}
+
+bool
+h713_dram_clk_ok(uint32_t *pll)
+{
+	*pll = 0;
+
+	return true;
 }
 
 #endif
