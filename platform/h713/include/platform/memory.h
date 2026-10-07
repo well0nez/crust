@@ -136,6 +136,10 @@
 /* P: the previous run's record, ARM only; X: reserved. */
 #define H713_P_BASE          H713_PAGE(0x2d0)
 #define H713_X_BASE          H713_PAGE(0x390)
+#define H713_X_FP_CYCLE      H713_PAGE(0x390) /* deep: 7..0 cycle of the set before, 15..8 after */
+#define H713_X_FP_BEFORE     H713_PAGE(0x394) /* deep: main-domain fingerprint, 13 words */
+#define H713_X_FP_AFTER      H713_PAGE(0x3c8)
+#define H713_X_FP_WORDS      13
 #define H713_X_LOCK_TICKS    H713_PAGE(0x3fc) /* deep: longest PLL lock wait, 31..24 PLL, 23..0 ticks */
 
 /*
@@ -186,6 +190,7 @@
  * names the register (PRUEFUNG5 DEEP-07). A good cycle leaves the last one.
  */
 #define H713_SUB(step, i)    ((step) << 8 | (i))
+#define H713_SUB_FP          1  /* main-domain fingerprint, 0 before, 1 after (ccu.c) */
 #define H713_SUB_ROOT_OSC    2  /* root clock i to OSC24M (r-ccu.c root_clk[]) */
 #define H713_SUB_PLL_OFF     3  /* PLL i off (r-ccu.c pll_reg[]) */
 #define H713_SUB_LDO_OFF     4

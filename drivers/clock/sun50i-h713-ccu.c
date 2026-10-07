@@ -6,6 +6,7 @@
 #include <bitmap.h>
 #include <clock.h>
 #include <device.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <clock/ccu.h>
 #include <delay.h>
@@ -13,6 +14,7 @@
 #include <util.h>
 #include <platform/devices.h>
 #include <platform/memory.h>
+#include <platform/prcm.h>
 
 #include "ccu.h"
 
@@ -92,10 +94,47 @@ mbus_step(uint8_t i)
 	mmio_write_32(H713_K_SUBSTEP, H713_SUB(H713_SUB_MBUS, i));
 }
 
+/*
+ * The main-domain fingerprint (platform/memory.h, X): read before the deep
+ * path and after it, so the kernel can name a word it changed (PRUEFUNG5
+ * design A). CCU msgbox and UART gates, MBUS, the display bus, the UART0
+ * pins (PH CFG0, 0x30 a bank), the SoC watchdog's MODE, R_PRCM 0x250 and
+ * 0x260, and the status of the five PPU domains (kernel sun50i-h713-ppu.c),
+ * those only while the PPU's bus gate and reset (R_PRCM 0x1ac) are open,
+ * else 0xffffffff. Reads only.
+ */
+#define PPU_STATUS(d)   (0x07001024 + 0x80 * (d))
+#define R_PPU_BUS       (DEV_R_PRCM + 0x1ac)
+#define FP_PPU          8       /* the first PPU word */
+static const uintptr_t fp_reg[H713_X_FP_WORDS] = {
+	DEV_CCU + 0x71c, DEV_CCU + 0x90c, DEV_CCU + 0x540, DEV_CCU + 0xdd8,
+	DEV_PIO + 0x150, DEV_WDOG + 0x14, VDD_SYS_PWROFF_GATING_REG,
+	VDD_SYS_RESET_REG, PPU_STATUS(0), PPU_STATUS(1), PPU_STATUS(2),
+	PPU_STATUS(3), PPU_STATUS(4),
+};
+
+static void
+fingerprint(uint8_t after)
+{
+	uintptr_t to = after ? H713_X_FP_AFTER : H713_X_FP_BEFORE;
+	uint32_t  cycle = mmio_read_32(H713_K_CYCLE) & 0xff;
+	bool      ppu = (mmio_read_32(R_PPU_BUS) & 0x10001) == 0x10001;
+
+	mmio_write_32(H713_K_SUBSTEP, H713_SUB(H713_SUB_FP, after));
+	for (uint8_t i = 0; i < ARRAY_SIZE(fp_reg); ++i) {
+		bool skip = !ppu && i >= FP_PPU;
+
+		mmio_write_32(to + 4 * i,
+		              skip ? 0xffffffff : mmio_read_32(fp_reg[i]));
+	}
+	mmio_clrset_32(H713_X_FP_CYCLE, 0xff << 8 * after, cycle << 8 * after);
+}
+
 /* 0xe164: the blob keeps MBUS (0x540) and PLL_PERIPH0 before the DRAM goes. */
 void __attribute__((noinline))
 ccu_suspend(void)
 {
+	fingerprint(0);
 	mbus_saved = mmio_read_32(DEV_CCU + 0x540);
 }
 
@@ -150,6 +189,7 @@ ccu_resume(void)
 	mbus_step(14);
 	mmio_set_32(DEV_CCU + 0x540, BIT(30));
 	udelay(10000);
+	fingerprint(1);
 }
 #else
 /* Light standby: the bus clocks of the main domain are not touched. */
