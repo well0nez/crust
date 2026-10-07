@@ -37,6 +37,7 @@
  * Contract page (this port, tables/arisc-contract.csv): the variables the
  * Linux driver sun50i-h713-arisc reads and writes, at fixed addresses
  * instead of the vendor build's BSS. ARM address = these + 0x100000.
+ * +0x1fc (version 4): the bytes of .text and .rodata from the image start.
  */
 #define H713_SHARED_BASE  0x00023800
 #define H713_SHARED_LIMIT SCPI_MEM_BASE

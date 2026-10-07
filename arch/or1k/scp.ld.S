@@ -46,6 +46,7 @@ SECTIONS
   } >SRAM_A2
 
   .data . : ALIGN(4) {
+    __data_start = .;
     *(SORT_BY_ALIGNMENT(SORT_BY_NAME(.data*)))
     . = ALIGN(4);
   } >SRAM_A2
