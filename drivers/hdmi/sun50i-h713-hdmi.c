@@ -145,9 +145,22 @@
 #define KEY_DEBOUNCE    3
 
 static uint8_t  edid[2 * EDID_BLOCK];
-static uint32_t txq[128];
-static uint8_t  txq_ch[128];	/* the channel of each queued word */
-static uint8_t  txq_head, txq_tail, txq_chan, seq;
+/*
+ * Two transmit queues, one per ARM-RX channel, so a word the ARM does not
+ * read on one channel never holds up the other: framed replies on channel 1
+ * (RequestEDID queues four frames of 20 words), the notify and the standby
+ * answers on channel 3.
+ */
+enum { Q_REPLY, Q_NOTIFY, Q_COUNT };
+#define TXQ_STALL_US    1000000 /* a reply nobody read for 1 s is stale */
+static uint32_t txq_reply[128], txq_notify[32];	/* powers of two */
+static uint32_t *const q_buf[Q_COUNT] = { txq_reply, txq_notify };
+static const uint8_t   q_size[Q_COUNT] = { ARRAY_SIZE(txq_reply),
+	                                   ARRAY_SIZE(txq_notify) };
+static const uint8_t   q_chan[Q_COUNT] = { CHAN_REPLY, CHAN_NOTIFY };
+static uint8_t  q_head[Q_COUNT], q_tail[Q_COUNT];
+static uint32_t q_stall[Q_COUNT];
+static uint8_t  seq;
 static uint8_t  pump_state, pump_len, pump_idx, pump_type;
 static uint8_t  sb_n, sb_count;
 static uint32_t sb_hdr, sb_data[8];
@@ -190,27 +203,50 @@ static const uint32_t ir_wake_codes[] = {	/* hy310-stock.dts 2569-2611, in its o
 #define sh_status(set, clr) \
 	mmio_write_32(SH_STATUS, (mmio_read_32(SH_STATUS) & ~(clr)) | (set))
 
-/* ---- transmit queue: never block on an 8-deep FIFO ----------------------- */
-static void
-txq_put(uint32_t w)
+/* ---- transmit queues: never block on an 8-deep FIFO ---------------------- */
+static bool
+q_empty(uint8_t q)
 {
-	uint8_t next = (txq_tail + 1) % ARRAY_SIZE(txq);
+	return q_head[q] == q_tail[q];
+}
 
-	if (next == txq_head) {
-		warn("H713: tx queue full"); return;
-	}
-	txq[txq_tail] = w;
-	txq_ch[txq_tail] = txq_chan;
-	txq_tail = next;
+static uint8_t
+q_free(uint8_t q)
+{
+	return q_size[q] - 1 - ((q_tail[q] - q_head[q]) & (q_size[q] - 1));
 }
 
 static void
-txq_drain(void)
+q_put(uint8_t q, uint32_t w)
 {
-	while (txq_head != txq_tail) {
-		if (msgbox_send(&msgbox.dev, txq_ch[txq_head], txq[txq_head]))
-			return;
-		txq_head = (txq_head + 1) % ARRAY_SIZE(txq);
+	uint8_t next = (q_tail[q] + 1) & (q_size[q] - 1);
+
+	if (next == q_head[q]) {
+		warn("H713: tx queue %u full", q); return;
+	}
+	if (q_empty(q))
+		q_stall[q] = timeout_set(TXQ_STALL_US);
+	q_buf[q][q_tail[q]] = w;
+	q_tail[q] = next;
+}
+
+static void
+q_drain(uint8_t q)
+{
+	while (!q_empty(q)) {
+		if (msgbox_send(&msgbox.dev, q_chan[q], q_buf[q][q_head[q]]))
+			break;
+		q_head[q] = (q_head[q] + 1) & (q_size[q] - 1);
+		q_stall[q] = timeout_set(TXQ_STALL_US);
+	}
+	/*
+	 * Replies are only ever asked for: one the ARM has not taken for a
+	 * second belongs to a request it gave up on (an aborted RequestEDID),
+	 * and the pump reads no new request while it waits.
+	 */
+	if (q == Q_REPLY && !q_empty(q) && timeout_expired(q_stall[q])) {
+		warn("H713: stale reply dropped");
+		q_head[q] = q_tail[q];
 	}
 }
 
@@ -226,16 +262,16 @@ reply_frame(uint8_t *payload, uint8_t len)
 	payload[len - 2] = (uint8_t)-sum;
 	payload[len - 1] = FRAME_TAIL;
 
-	txq_chan = CHAN_REPLY;
-	txq_put(BOP_MARKER | seq << 8 | REPLY_TYPE << 16 | (uint32_t)len << 24);
-	txq_put(0);
+	q_put(Q_REPLY, BOP_MARKER | seq << 8 | REPLY_TYPE << 16 |
+	      (uint32_t)len << 24);
+	q_put(Q_REPLY, 0);
 	seq = seq % 255 + 1;
 	for (uint8_t i = 0; i < len; i += 4) {
 		uint32_t w = 0;
 
 		for (uint8_t b = 0; b < 4 && i + b < len; ++b)
 			w |= (uint32_t)payload[i + b] << (8 * b);
-		txq_put(w);
+		q_put(Q_REPLY, w);
 	}
 }
 
@@ -549,18 +585,28 @@ sb_reply(uint8_t type, uint8_t result, uint32_t *data, uint8_t count)
 
 	if (!(attr & 3))
 		return;
-	txq_chan = CHAN_NOTIFY;
-	txq_put(SB_STATE | (uint32_t)attr << 8 | (uint32_t)type << 16 |
-	        (uint32_t)result << 24);
-	txq_put(count);
+	if (q_free(Q_NOTIFY) < 2 + count) {
+		warn("H713: no room for the answer to %x", type); return;
+	}
+	q_put(Q_NOTIFY, SB_STATE | (uint32_t)attr << 8 | (uint32_t)type << 16 |
+	      (uint32_t)result << 24);
+	q_put(Q_NOTIFY, count);
 	for (uint8_t i = 0; i < count; ++i)
-		txq_put(data[i]);
+		q_put(Q_NOTIFY, data[i]);
 }
 
 static void
 sb_frame(void)
 {
 	uint8_t type = sb_hdr >> 16;
+
+	/*
+	 * A request that wants an answer comes after the ARM emptied channel 3
+	 * (arisc_sb_request): whatever is still queued there - a notify after
+	 * a firmware restart nobody listened to - would be read as the answer.
+	 */
+	if (type != TYPE_NOTIFY && (sb_hdr >> 8 & 3))
+		q_head[Q_NOTIFY] = q_tail[Q_NOTIFY];
 
 	switch (type) {
 	case TYPE_NOTIFY:	/* the ARM's acknowledgement of our notify */
@@ -625,14 +671,13 @@ send_notify(void)
 		end = end || !version[i];	/* never read past the NUL */
 		s[i] = end ? 0 : version[i];
 	}
-	txq_chan = CHAN_NOTIFY;
-	txq_put((uint32_t)TYPE_NOTIFY << 16 | 2 << 8);
-	txq_put(13);
+	q_put(Q_NOTIFY, (uint32_t)TYPE_NOTIFY << 16 | 2 << 8);
+	q_put(Q_NOTIFY, 13);
 	for (uint8_t k = 0; k < 13; ++k) {
 		uint32_t w = (k ? s[4 * k - 4] : 0) | (uint32_t)s[4 * k + 3] << 8 |
 		             (uint32_t)s[4 * k + 2] << 16 | (uint32_t)s[4 * k + 1] << 24;
 
-		txq_put(w);
+		q_put(Q_NOTIFY, w);
 	}
 }
 
@@ -661,11 +706,14 @@ h713_poll(void)
 {
 	uint32_t w;
 
-	txq_drain();
-	while (txq_head == txq_tail &&
-	       msgbox_receive(&msgbox.dev, PORT_STANDBY, &w) == SUCCESS)
+	q_drain(Q_REPLY);
+	q_drain(Q_NOTIFY);
+	/* Standby frames always: their answers are three words at most, and
+	 * TF-A's cpu op req must never wait behind an unread reply. */
+	while (msgbox_receive(&msgbox.dev, PORT_STANDBY, &w) == SUCCESS)
 		sb_word(w);
-	while (txq_head == txq_tail &&
+	/* The pump one request at a time: the next after the last reply left. */
+	while (q_empty(Q_REPLY) &&
 	       msgbox_receive(&msgbox.dev, PORT_HDMI, &w) == SUCCESS)
 		pump_word(w);
 	mips_poll();
