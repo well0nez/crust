@@ -37,9 +37,10 @@ void
 record_step(uint32_t step)
 {
 	mmio_write_32(LAST_STEP_REG, step);
-	/* H713: a step boundary feeds the sleep net (sun50i-h713-sleep.c) */
-	if (CONFIG(PLATFORM_H713))
-		h713_sleep_step();
+#if CONFIG(PLATFORM_H713)
+	/* a step boundary feeds the sleep net (sun50i-h713-sleep.c) */
+	h713_sleep_step();
+#endif
 }
 
 void
