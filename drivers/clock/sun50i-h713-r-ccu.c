@@ -200,7 +200,14 @@ cpus_clk_osc24m(void)
 #define RTC_LOSC_CTRL   (DEV_RTC + 0x000)
 #define LOSC_SEEN       H713_SEEN_LOSC
 
-/* 0xcdd8's table 0x17124: the clocks it moves to source 0, divider 1. */
+/*
+ * 0xcdd8's table 0x17124: the clocks it moves to source 0, divider 1. The
+ * blob saves M 1..0, P 9..8 and the source; R_PRCM 0x000/0x00c/0x010 have
+ * a 5-bit M (the kernel's D1 model), so bits 4..2 are saved too (PRUEFUNG4
+ * clocks F8).
+ */
+#define ROOT_DIV        0x0000031f
+#define ROOT_SRC        0x07000000
 static const uintptr_t root_clk[8] = {
 	DEV_CCU + 0x500, DEV_CCU + 0x510, DEV_CCU + 0x520, DEV_CCU + 0x524,
 	DEV_R_PRCM + 0x124, DEV_R_PRCM + 0x000, DEV_R_PRCM + 0x00c,
@@ -231,23 +238,29 @@ root_clocks_to_osc24m(void)                             /* 0xcdd8(0) */
 	for (uint8_t i = 0; i < ARRAY_SIZE(root_clk); ++i) {
 		uint32_t v = mmio_read_32(root_clk[i]);
 
-		root_saved[i] = v & 0x07000303;                 /* 0xcec0 */
-		v &= 0xf8ffffff;                                /* source 0 */
+		root_saved[i] = v & (ROOT_SRC | ROOT_DIV);      /* 0xcec0 */
+		v &= ~ROOT_SRC;                                 /* source 0 */
 		mmio_write_32(root_clk[i], v);                  /* 0xcefc */
 		mmio_write_32(root_clk[i], v & 0xfffffc00);     /* 0xcf0c */
 		udelay(10000);                                  /* 0xcf14 */
 	}
 }
 
+/*
+ * The blob's order, divider first, then the source (0xce6c); each field is
+ * replaced, not ORed into what the register reads, so a divider the way
+ * down did not clear (a domain reset, a restart) cannot merge with the
+ * saved one (PRUEFUNG5 DEEP-04).
+ */
 static void
 root_clocks_restore(void)                               /* 0xcdd8(4) */
 {
 	for (uint8_t i = 0; i < ARRAY_SIZE(root_clk); ++i) {
 		uint32_t v = mmio_read_32(root_clk[i]);
 
-		v |= root_saved[i] & 0x00000303;                /* 0xce6c */
+		v = (v & ~ROOT_DIV) | (root_saved[i] & ROOT_DIV);
 		mmio_write_32(root_clk[i], v);
-		v = (v & 0xf8ffffff) | (root_saved[i] & 0x07000000);
+		v = (v & ~ROOT_SRC) | (root_saved[i] & ROOT_SRC);
 		mmio_write_32(root_clk[i], v);
 		udelay(10000);
 	}
