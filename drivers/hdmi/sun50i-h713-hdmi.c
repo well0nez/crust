@@ -170,6 +170,7 @@ static uint8_t  sb_n, sb_count;
 static uint32_t sb_hdr, sb_data[8];
 static uint32_t hpd_deadline, key_deadline, ms_deadline;
 static bool     wake_armed;	/* .bss: false again after a firmware restart */
+static bool     woke;		/* a resume since the last 0x11 */
 static uint8_t  key_low;
 static uint32_t pl_cfg_saved;
 /*
@@ -633,8 +634,16 @@ sb_frame(void)
 		                    SCPI_CSS_OFF, SCPI_CSS_OFF);
 		break;
 	case TYPE_RESTORE: {	/* answered with the wake word */
-		uint32_t wake = mmio_read_32(SH_WAKE);
+		/*
+		 * Only once per resume: after a suspend Linux abandoned before
+		 * TF-A's cpu op req (an abort after the noirq phase), the word
+		 * of the previous standby must not come back as this one's;
+		 * the answer is 0 then, and a timer armed for it is cleared.
+		 */
+		uint32_t wake = woke ? mmio_read_32(SH_WAKE) : 0;
 
+		woke = false;
+		mmio_write_32(H713_DIAG_WAKE_TIMER, 0);
 		sb_reply(type, 0, &wake, 1);
 		break;
 	}
@@ -841,6 +850,7 @@ h713_resume_done(void)
 	mmio_write_32(R_PIO_PL_DRV1, pl_drv1_saved);
 	mmio_write_32(R_PIO_PL_CFG0, pl_cfg0_saved);
 	sh_status(0, ST_ASLEEP);
+	woke = true;
 	/* The HPD tick did not run asleep: a deadline from before the standby
 	 * would not expire for up to 89 s after a long one. */
 	hpd_deadline = timeout_set(HPD_TICK_US);
