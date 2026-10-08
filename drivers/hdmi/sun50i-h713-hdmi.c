@@ -123,7 +123,6 @@
  * that; taken ones are only recorded (MIPS_STRAY_INFO), the rest counts.
  */
 #define MIPS_STRAYS     3
-#define MIPS_TYPE       2  /* the one type DispMips serves (blob 0x11828) */
 #define STRAY_TAKEN     (H713_K_MIPS_STRAY_INFO + 2)
 #define STRAY_COUNTED   (H713_K_MIPS_STRAY_INFO + 3)
 #define RX_PORT(p)      (2 * (p))      /* ARM -> ARISC, user1 port p */
@@ -235,7 +234,7 @@ static uint32_t pl_cfg0_saved, pl_drv0_saved, pl_drv1_saved, pl_pull0_saved;
 static uint32_t pl_data_saved;
 static const struct device *cir;
 static struct {
-	uint8_t state, type, len, idx, buf[8];
+	uint8_t state, len, idx, buf[8];
 } mips[4];
 static int8_t   mips_spare;	/* the budget - MIPS_STRAYS, 0 at a start */
 
@@ -697,15 +696,13 @@ pump_word(uint32_t w)
 
 /* ---- the display MIPS (blob 0x1180c "DispMips", 0x1242c) ------------------ */
 static void
-mips_frame(uint8_t q, uint8_t type, const uint8_t *p, uint8_t len)
+mips_frame(uint8_t q, const uint8_t *p, uint8_t len)
 {
 	mmio_write_32(DIAG_MIPS_N, mmio_read_32(DIAG_MIPS_N) + 1);
 	mmio_write_32(DIAG_MIPS_LAST, p[0] | p[1] << 8 | p[2] << 16 |
 	              (uint32_t)p[3] << 24);
 	mmio_write_32(H713_K_MIPS_PORT, q);
-	if (type != MIPS_TYPE) {				/* 0x11828 */
-		h713_cnt(H713_CNT_MIPS_DROP);
-	} else if (len >= 3 && p[0] == 0x16 && p[1] < PORTS) {	/* 0x12330 */
+	if (len >= 3 && p[0] == 0x16 && p[1] < PORTS) {	/* 0x12330 */
 		uint8_t port = p[1], action = p[2];
 
 		h713_cnt(H713_CNT_MIPS_16);
@@ -714,12 +711,9 @@ mips_frame(uint8_t q, uint8_t type, const uint8_t *p, uint8_t len)
 		mips_spare = mips_spare > 0 ? MIPS_STRAYS :
 		             mips_spare + MIPS_STRAYS;
 		/*
-		 * No aux clock before the first ResetEDIDModule: dropped,
-		 * counted above with every 0x16 and not as an error - the
-		 * MIPS may well send it that early at boot. crust's own guard,
-		 * not the blob's: 0x12330 does not look at the clock; here the
-		 * pin access it leads to would be refused by aux_ok() and
-		 * counted as an error.
+		 * No aux clock before the first ResetEDIDModule: dropped as
+		 * the blob drops it, counted above with every 0x16 and not as
+		 * an error - the MIPS may well send it that early at boot.
 		 */
 		if (!aux_clocked())
 			return;
@@ -776,7 +770,6 @@ mips_poll(void)
 					break;
 				}
 				mmio_write_32(H713_K_MIPS_HEAD, w);
-				mips[q].type = w >> 16;
 				mips[q].len = w >> 24;
 				mips[q].idx = 0;
 				for (uint8_t i = 0; i < sizeof(mips[q].buf); ++i)
@@ -788,7 +781,7 @@ mips_poll(void)
 			case 1:
 				mips[q].state = mips[q].len ? 2 : 0;
 				if (!mips[q].len)
-					mips_frame(q, mips[q].type, mips[q].buf, 0);
+					mips_frame(q, mips[q].buf, 0);
 				break;
 			default:
 				for (uint8_t b = 0; b < 4 && mips[q].idx < mips[q].len;
@@ -798,8 +791,7 @@ mips_poll(void)
 				}
 				if (mips[q].idx >= mips[q].len) {
 					mips[q].state = 0;
-					mips_frame(q, mips[q].type, mips[q].buf,
-					           mips[q].len);
+					mips_frame(q, mips[q].buf, mips[q].len);
 				}
 				break;
 			}
