@@ -129,21 +129,22 @@
 #define H713_K_WAKE_KEPT     H713_PAGE(0x2b0) /* the last resume's wake word, until 0x11 */
 #define H713_K_MIPS_HEAD     H713_PAGE(0x2b4) /* header word of the last DispMips frame, below */
 #define H713_K_MIPS_STRAY    H713_PAGE(0x2b8) /* the last DispMips word without the marker */
-#define H713_K_MIPS_STRAY_INFO H713_PAGE(0x2bc) /* where it came from, below */
+#define H713_K_MIPS_STRAY_INFO H713_PAGE(0x2bc) /* its port, how many, below */
 #define H713_K_LIMIT         H713_PAGE(0x2c0)
 
 /*
- * DispMips record, three words of K that were free (no new version: a
- * reader that does not know them reads zero there, as before).
+ * DispMips record, three words of K that were free (no new version: the
+ * kernel and TF-A read none of them by name, both copy K whole into P).
  * MIPS_HEAD: every header word crust takes off the MIPS sub-block, as it
- * came: 7..0 the marker 0xa5, 15..8 seq, 23..16 type (the blob serves 2
- * only), 31..24 len in bytes. MIPS_STRAY: the last word outside a frame
- * without the marker (the blob reads such words and drops them without a
- * trace, 0x80c4). MIPS_STRAY_INFO: 7..0 the port of that word; 15..8 such
- * words since the last valid 0x16 (saturating at 255); 23..16 such words
- * taken as the measured companions of a 0x16 (three per 0x16, the budget
- * in sun50i-h713-hdmi.c), 31..24 such words counted in MIPS_DROP (both
- * wrapping).
+ * came (also one with len > 128): 7..0 the marker 0xa5, 15..8 seq, 23..16
+ * type (the blob serves 2 only, 0x11828; crust does not look at it),
+ * 31..24 len in bytes.
+ * MIPS_STRAY: the last word without the marker outside a frame. The blob
+ * reads such words and drops them without a trace (0x80c4/0x80c8); crust
+ * only records them here, they never count in MIPS_DROP.
+ * MIPS_STRAY_INFO: 7..0 the port of that word; 15..8 such words since the
+ * last valid 0x16 (saturating at 0xff); 23..16 such words in all (8 bits,
+ * wrapping, as the counters); 31..24 zero.
  */
 
 /* A: written by the ARM, read by crust. */
@@ -296,7 +297,7 @@
 #define H713_CNT_ARM_UNKNOWN (H713_K_CNT0 + 2) /* ARM type, sub-command, no answer */
 #define H713_CNT_TXQ_FULL    (H713_K_CNT0 + 3) /* tx queue full, answer lost */
 #define H713_CNT_STALE_REPLY (H713_K_CNT1 + 0) /* reply nobody read */
-#define H713_CNT_MIPS_DROP   (H713_K_CNT1 + 1) /* DispMips words/frames dropped, aux unclocked */
+#define H713_CNT_MIPS_DROP   (H713_K_CNT1 + 1) /* DispMips frames the blob reports, aux unclocked */
 #define H713_CNT_MIPS_17     (H713_K_CNT1 + 2) /* DispMips ResetEDIDModule */
 #define H713_CNT_MIPS_16     (H713_K_CNT1 + 3) /* DispMips PullHotPlug */
 #define H713_CNT_TAKEN       (H713_K_CNT2 + 0) /* requests taken */
