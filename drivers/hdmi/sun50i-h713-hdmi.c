@@ -116,9 +116,11 @@
  * Words without the marker outside a frame: the blob reads them and drops
  * them without a trace (0x80c4/0x80c8). The HY310's MIPS sends three with
  * every 0x16 (08.10.2026, R1 image: three 0x16, CNT1 0x03000900, no error
- * bit, DIAG_MIPS_N 3); where they sit is not measured. Up to MIPS_STRAYS
- * of them between two valid 0x16, and before the first, are taken as its
- * companions and only recorded (MIPS_STRAY_INFO); any further one counts.
+ * bit, DIAG_MIPS_N 3); where they sit is not measured, and on another port
+ * they are read before or after their 0x16 as the poll finds them. So they
+ * are taken as its companions against a budget, mips_spare: MIPS_STRAYS at
+ * a start, MIPS_STRAYS more with each valid 0x16, never more than twice
+ * that; taken ones are only recorded (MIPS_STRAY_INFO), the rest counts.
  */
 #define MIPS_STRAYS     3
 #define MIPS_TYPE       2  /* the one type DispMips serves (blob 0x11828) */
@@ -235,6 +237,7 @@ static const struct device *cir;
 static struct {
 	uint8_t state, type, len, idx, buf[8];
 } mips[4];
+static int8_t   mips_spare;	/* the budget - MIPS_STRAYS, 0 at a start */
 
 #define PL(pin, m, p) { .dev = &r_pio.dev, .id = SUNXI_GPIO_PIN(0, pin), \
 	.drive = DRIVE_10mA, .mode = m, .pull = p }
@@ -708,6 +711,8 @@ mips_frame(uint8_t q, uint8_t type, const uint8_t *p, uint8_t len)
 		h713_cnt(H713_CNT_MIPS_16);
 		mmio_write_32(H713_K_MIPS_STRAY_INFO,	/* its companions anew */
 		              mmio_read_32(H713_K_MIPS_STRAY_INFO) & ~0xff00U);
+		mips_spare = mips_spare > 0 ? MIPS_STRAYS :
+		             mips_spare + MIPS_STRAYS;
 		/*
 		 * No aux clock before the first ResetEDIDModule: dropped,
 		 * counted above with every 0x16 and not as an error - the
@@ -742,11 +747,12 @@ mips_stray(uint8_t q, uint32_t w)
 		n = 0xff;
 	mmio_write_32(H713_K_MIPS_STRAY, w);
 	mmio_write_32(H713_K_MIPS_STRAY_INFO, (info & 0xffff0000U) | n << 8 | q);
-	if (n > MIPS_STRAYS) {
+	if (mips_spare > -MIPS_STRAYS) {
+		--mips_spare;
+		h713_cnt(STRAY_TAKEN);
+	} else {
 		h713_cnt(STRAY_COUNTED);
 		h713_cnt(H713_CNT_MIPS_DROP);
-	} else {
-		h713_cnt(STRAY_TAKEN);
 	}
 }
 

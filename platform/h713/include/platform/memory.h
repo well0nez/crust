@@ -141,8 +141,9 @@
  * without the marker (the blob reads such words and drops them without a
  * trace, 0x80c4). MIPS_STRAY_INFO: 7..0 the port of that word; 15..8 such
  * words since the last valid 0x16 (saturating at 255); 23..16 such words
- * taken as the measured companions of a 0x16, 31..24 such words counted
- * in MIPS_DROP (both wrapping).
+ * taken as the measured companions of a 0x16 (three per 0x16, the budget
+ * in sun50i-h713-hdmi.c), 31..24 such words counted in MIPS_DROP (both
+ * wrapping).
  */
 
 /* A: written by the ARM, read by crust. */
