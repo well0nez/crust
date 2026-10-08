@@ -127,7 +127,23 @@
 #define H713_K_SUBSTEP       H713_PAGE(0x2a8) /* deep stage only */
 #define H713_K_DEEP_LOCK     H713_PAGE(0x2ac) /* deep stage only */
 #define H713_K_WAKE_KEPT     H713_PAGE(0x2b0) /* the last resume's wake word, until 0x11 */
+#define H713_K_MIPS_HEAD     H713_PAGE(0x2b4) /* header word of the last DispMips frame, below */
+#define H713_K_MIPS_STRAY    H713_PAGE(0x2b8) /* the last DispMips word without the marker */
+#define H713_K_MIPS_STRAY_INFO H713_PAGE(0x2bc) /* where it came from, below */
 #define H713_K_LIMIT         H713_PAGE(0x2c0)
+
+/*
+ * DispMips record, three words of K that were free (no new version: a
+ * reader that does not know them reads zero there, as before).
+ * MIPS_HEAD: every header word crust takes off the MIPS sub-block, as it
+ * came: 7..0 the marker 0xa5, 15..8 seq, 23..16 type (the blob serves 2
+ * only), 31..24 len in bytes. MIPS_STRAY: the last word outside a frame
+ * without the marker (the blob reads such words and drops them without a
+ * trace, 0x80c4). MIPS_STRAY_INFO: 7..0 the port of that word; 15..8 such
+ * words since the last valid 0x16 (saturating at 255); 23..16 such words
+ * taken as the measured companions of a 0x16, 31..24 such words counted
+ * in MIPS_DROP (both wrapping).
+ */
 
 /* A: written by the ARM, read by crust. */
 #define H713_A_NET_REQ       H713_PAGE(0x2c0) /* kernel: 31..24 0xa5, 23..16 format, 15..8 cycle */

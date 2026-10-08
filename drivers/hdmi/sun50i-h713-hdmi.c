@@ -112,6 +112,17 @@
 #define MIPS_FIFO_STAT(p) (DEV_MSGBOX + 0x400 + 0x100 + 0x60 + 4 * (p))
 #define MIPS_MSG_DATA(p)  (DEV_MSGBOX + 0x400 + 0x100 + 0x70 + 4 * (p))
 #define MIPS_PASS_WORDS 16 /* per port and main loop pass */
+/*
+ * Words without the marker outside a frame: the blob reads them and drops
+ * them without a trace (0x80c4/0x80c8). The HY310's MIPS sends three with
+ * every 0x16 (08.10.2026, R1 image: three 0x16, CNT1 0x03000900, no error
+ * bit, DIAG_MIPS_N 3); where they sit is not measured. Up to MIPS_STRAYS
+ * of them between two valid 0x16, and before the first, are taken as its
+ * companions and only recorded (MIPS_STRAY_INFO); any further one counts.
+ */
+#define MIPS_STRAYS     3
+#define STRAY_TAKEN     (H713_K_MIPS_STRAY_INFO + 2)
+#define STRAY_COUNTED   (H713_K_MIPS_STRAY_INFO + 3)
 #define RX_PORT(p)      (2 * (p))      /* ARM -> ARISC, user1 port p */
 #define TX_CHAN(c)      (2 * (c) + 1)  /* ARISC -> ARM, user0 channel c */
 #define PORT_HDMI       RX_PORT(0)
@@ -692,6 +703,8 @@ mips_frame(uint8_t q, const uint8_t *p, uint8_t len)
 		uint8_t port = p[1], action = p[2];
 
 		h713_cnt(H713_CNT_MIPS_16);
+		mmio_write_32(H713_K_MIPS_STRAY_INFO,	/* its companions anew */
+		              mmio_read_32(H713_K_MIPS_STRAY_INFO) & ~0xff00U);
 		/*
 		 * No aux clock before the first ResetEDIDModule: dropped as
 		 * the blob drops it, counted above with every 0x16 and not as
@@ -712,6 +725,25 @@ mips_frame(uint8_t q, const uint8_t *p, uint8_t len)
 	}
 }
 
+/* A word without the marker outside a frame on MIPS port @q (MIPS_STRAYS). */
+static void
+mips_stray(uint8_t q, uint32_t w)
+{
+	uint32_t info = mmio_read_32(H713_K_MIPS_STRAY_INFO);
+	uint32_t n = (info >> 8 & 0xff) + 1;
+
+	if (n > 0xff)
+		n = 0xff;
+	mmio_write_32(H713_K_MIPS_STRAY, w);
+	mmio_write_32(H713_K_MIPS_STRAY_INFO, (info & 0xffff0000U) | n << 8 | q);
+	if (n > MIPS_STRAYS) {
+		h713_cnt(STRAY_COUNTED);
+		h713_cnt(H713_CNT_MIPS_DROP);
+	} else {
+		h713_cnt(STRAY_TAKEN);
+	}
+}
+
 /*
  * The pump 0x7fd8 once more, for the MIPS: payload in the words, LSB first.
  * At most MIPS_PASS_WORDS per port and pass: a FIFO that does not pop on
@@ -728,9 +760,10 @@ mips_poll(void)
 			switch (mips[q].state) {
 			case 0:
 				if ((w & 0xff) != BOP_MARKER) {
-					h713_cnt(H713_CNT_MIPS_DROP);
+					mips_stray(q, w);
 					break;
 				}
+				mmio_write_32(H713_K_MIPS_HEAD, w);
 				mips[q].len = w >> 24;
 				mips[q].idx = 0;
 				for (uint8_t i = 0; i < sizeof(mips[q].buf); ++i)
