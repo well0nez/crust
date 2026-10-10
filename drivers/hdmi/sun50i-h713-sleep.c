@@ -85,13 +85,21 @@ armed(void)
 	return CONFIG(H713_SLEEP_NET) && (state() & H713_SB_ARMED);
 }
 
-/* Into @ph; a net phase counts its milliseconds from 0, an end keeps them. */
+/* The phases NET_MS counts: the net's, and a power off (how long crust
+ * lived in it, for the record of the next boot). */
+static bool
+counted_phase(uint8_t ph)
+{
+	return net_phase(ph) || ph == H713_PH_POWEROFF;
+}
+
+/* Into @ph; a counted phase counts its milliseconds from 0, an end keeps them. */
 static void
 set_phase(uint32_t st, uint8_t ph)
 {
 	mmio_write_32(H713_K_SB_STATE,
 	              (st & ~(H713_SB_PHASE | H713_SB_RESTARTS)) | ph);
-	if (net_phase(ph))
+	if (counted_phase(ph))
 		mmio_write_32(H713_K_NET_MS, 0);
 }
 
@@ -104,7 +112,7 @@ static void
 tick(void)
 {
 	uint8_t ph = phase();
-	bool count = net_phase(ph);
+	bool count = counted_phase(ph);
 	bool wake = ph == H713_PH_CPU_OP || ph == H713_PH_SLEEP;
 
 	if (!ms_armed) {

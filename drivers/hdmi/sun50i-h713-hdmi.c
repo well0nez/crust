@@ -1381,6 +1381,14 @@ h713_power_off_rails(bool on)
 #if CONFIG(H713_POWER_OFF)
 	if (gpio_get(&off_rails) != SUCCESS)
 		return;
+#if CONFIG(H713_TEST)
+	/* the device test: when the rails went, in the record's error words
+	 * (no error bit set) - NET_MS is how long crust lived after it */
+	if (!on) {
+		mmio_write_32(H713_K_ERR_DETAIL, 0xfff00000U); /* no such bit */
+		mmio_write_32(H713_K_ERR_DATA, mmio_read_32(H713_K_NET_MS));
+	}
+#endif
 	gpio_set_value(&off_rails, on);
 	if (on)
 		udelay(RAILS_UP_US);
