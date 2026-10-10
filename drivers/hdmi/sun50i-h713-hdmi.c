@@ -168,6 +168,7 @@
 #define TYPE_CPU_OP     0x22 /* cpu op req: {mpidr, entry, 3, 3, 3} */
 #define TYPE_WAKE_CLR   0x25
 #define TYPE_WAKE_SET   0x26
+#define TYPE_POWEROFF   0x19 /* the vendor's fake poweroff req: {flags} */
 #define RESULT_UNKNOWN  0xfd
 #define HPD_RESET_TICKS 84    /* ~840 ms low, then the rising edge */
 #define HPD_TICK_US     10000
@@ -249,6 +250,28 @@ static const struct gpio_handle key_pin  = PL(CONFIG_H713_POWER_KEY_PIN, MODE_IN
 #define LED_MASK        (LED_BIT(LED_RED) | LED_BIT(LED_BLUE))
 static const struct gpio_handle led_red  = PL(LED_PIN(LED_RED), MODE_OUTPUT, PULL_NONE);
 static const struct gpio_handle led_blue = PL(LED_PIN(LED_BLUE), MODE_OUTPUT, PULL_NONE);
+
+#if CONFIG(H713_POWER_OFF)
+/*
+ * Power off (doku/187, the vendor's 0xeaa8). PB5 (lamp and fan) and PL3
+ * (USB VBUS) are the two lines U-Boot's power gate keeps low; Linux may have
+ * left them high, and nothing resets the SoC before the rails go: they go
+ * low first. The rail enable runs the board high (stock standby_param).
+ * U-Boot's gate words in RTC GP5: TF-A writes GATE before it asks, U-Boot
+ * boots through RUN1.
+ */
+static const struct gpio_handle off_pb5 = {
+	.dev = &pio.dev, .id = SUNXI_GPIO_PIN(1, 5),
+	.drive = DRIVE_10mA, .mode = MODE_OUTPUT, .pull = PULL_NONE,
+};
+static const struct gpio_handle off_pl3   = PL(3, MODE_OUTPUT, PULL_NONE);
+static const struct gpio_handle off_rails = PL(CONFIG_H713_POWER_OFF_RAILS_PIN,
+                                               MODE_OUTPUT, PULL_NONE);
+#define RTC_GP5         (DEV_RTC + 0x114)
+#define GP5_GATE        0x47415445 /* "GATE": U-Boot waits for the key */
+#define GP5_RUN1        0x52554e31 /* "RUN1": U-Boot boots through */
+#define RAILS_UP_US     10000      /* the blob's 0x6b68(10) after PL6 high */
+#endif
 
 #if CONFIG(H713_IR_WAKE_NECX)
 /* cir_param of the HY310 and HY300 Pro vendor DTs, in crust's NECX order. */
@@ -823,6 +846,40 @@ sb_reply(uint8_t type, uint8_t result, uint32_t *data, uint8_t count)
 		q_put(Q_NOTIFY, data[i]);
 }
 
+#if CONFIG(H713_POWER_OFF)
+/*
+ * TF-A's SYSTEM_OFF (attr 0, no answer; it parks the core). Taken only
+ * outside a standby: inside one TF-A sees no POWEROFF phase and resets into
+ * U-Boot's gate as before. The board lines go low while the main PIO still
+ * runs, the cluster goes down after TF-A had the time to reach WFI, and the
+ * state machine shuts down: DRAM to self-refresh, then the rails
+ * (system.c), and the wake ends in the reset (h713_power_off_reset()).
+ */
+static void
+power_off_request(void)
+{
+	uint8_t ph = mmio_read_32(H713_K_SB_STATE) & H713_SB_PHASE;
+
+	if (ph != H713_PH_OFF && ph != H713_PH_RELEASED) {
+		h713_err(H713_ERR_POWER_OFF, ph, sb_count ? sb_data[0] : 0);
+		return;
+	}
+	h713_sleep_event(H713_EV_POWER_OFF);
+	info("H713: power off req");
+	if (gpio_get(&off_pb5) == SUCCESS)
+		gpio_set_value(&off_pb5, false);
+	if (gpio_get(&off_pl3) == SUCCESS)
+		gpio_set_value(&off_pl3, false);
+#if CONFIG(H713_TEST) && CONFIG_H713_POWER_OFF_TEST_WAKE_S
+	mmio_write_32(H713_DIAG_WAKE_TIMER,
+	              CONFIG_H713_POWER_OFF_TEST_WAKE_S * 1000U);
+#endif
+	udelay(CPU_OP_DELAY_US);
+	css_power_off();
+	system_shutdown();
+}
+#endif
+
 static void
 sb_frame(void)
 {
@@ -885,6 +942,11 @@ sb_frame(void)
 		mmio_write_32(H713_DIAG_WAKE_TIMER, 0);
 		h713_sleep_request();
 		sb_reply(type, 0, NULL, 0); break;
+#if CONFIG(H713_POWER_OFF)
+	case TYPE_POWEROFF:	/* {flags}: none defined, CEC is not ours */
+		power_off_request();
+		break;
+#endif
 	default:
 		sb_reply(type, RESULT_UNKNOWN, NULL, 0); break;
 	}
@@ -908,7 +970,8 @@ sb_head(uint32_t w)
 	return (state == 0 || state == SB_STATE) &&
 	       (type == TYPE_RESTORE || type == TYPE_CPU_OP ||
 	        type == TYPE_WAKE_CLR || type == TYPE_WAKE_SET ||
-	        type == TYPE_NOTIFY);
+	        type == TYPE_NOTIFY ||
+	        (CONFIG(H713_POWER_OFF) && type == TYPE_POWEROFF));
 }
 
 static void
@@ -1043,7 +1106,8 @@ h713_init(void)
 	mmio_write_32(H713_K_COMPAT, H713_COMPAT);
 	mmio_write_32(H713_K_BUILD2, (BUILD2_DRAM_MHZ & 0xfff) |
 	              (CONFIG_H713_BOARD_ID & 0xf) << 12 |
-	              (BUILD2_NET_CODE & 0xff) << 16);
+	              (BUILD2_NET_CODE & 0xff) << 16 |
+	              (uint32_t)CONFIG(H713_POWER_OFF) << 24);
 	if (!acked)
 		portmap_init();
 	if (aux_clocked())	/* hardware state, also after a restart */
@@ -1296,4 +1360,34 @@ h713_resume_done(void)
 	/* one standby per arming, as the vendor's 0x26 */
 	mmio_write_32(H713_DIAG_WAKE_TIMER, 0);
 	info("H713: resumed, wake word %x", mmio_read_32(SH_WAKE));
+}
+
+void
+h713_power_off_rails(bool on)
+{
+#if CONFIG(H713_POWER_OFF)
+	if (gpio_get(&off_rails) != SUCCESS)
+		return;
+	gpio_set_value(&off_rails, on);
+	if (on)
+		udelay(RAILS_UP_US);
+#else
+	(void)on;
+#endif
+}
+
+void
+h713_power_off_reset(void)
+{
+#if CONFIG(H713_POWER_OFF)
+	/*
+	 * Only a power off TF-A handed over left GATE: a wake from it boots
+	 * through. Anything else (a restart inside a standby that ended up
+	 * off, STBY) keeps its word, and U-Boot decides as before.
+	 */
+	if (mmio_read_32(RTC_GP5) == GP5_GATE) {
+		mmio_write_32(RTC_GP5, GP5_RUN1);
+		info("H713: power off left, GP5 RUN1, reset");
+	}
+#endif
 }

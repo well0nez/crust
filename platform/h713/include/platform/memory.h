@@ -107,7 +107,7 @@
 /* K: crust's own record, kept across its restarts. */
 #define H713_K_BASE          H713_PAGE(0x260)
 #define H713_K_COMPAT        H713_PAGE(0x260) /* 7..0 oldest reader version, 15..8 newest NET_REQ format */
-#define H713_K_BUILD2        H713_PAGE(0x264) /* 11..0 DRAM MHz, 15..12 board, 23..16 R_WDOG interval */
+#define H713_K_BUILD2        H713_PAGE(0x264) /* 11..0 DRAM MHz, 15..12 board, 23..16 R_WDOG interval, 24 power off */
 #define H713_K_SB_STATE      H713_PAGE(0x268) /* standby phase, see below */
 #define H713_K_NET_ACC       H713_PAGE(0x26c) /* budgets taken, s: 15..0 presleep, 31..16 resuming */
 #define H713_K_NET_RB        H713_PAGE(0x270) /* R_WDOG read back at arming: 15..0 MODE, 31..16 CFG */
@@ -210,6 +210,7 @@
 #define H713_PH_RESUMING     4  /* CPU0 released, or 0x11 without a sleep */
 #define H713_PH_RELEASED     5  /* confirmed, the net off */
 #define H713_PH_RESET        6  /* in h713_fail() */
+#define H713_PH_POWEROFF     7  /* power off (0x19) taken: rails off, a wake resets */
 #define H713_SB_PHASE        0x0000000f
 #define H713_SB_ARMED        0x00000010
 #define H713_SB_TAKEN        0x00000020
@@ -290,6 +291,7 @@
 #define H713_ERR_RWDOG_FOUND 15
 #define H713_ERR_RWDOG_RESET 16
 #define H713_ERR_RWDOG_DISARM 17 /* MODE still armed after a disarm: detail 0 release, 1 first start */
+#define H713_ERR_POWER_OFF   18 /* 0x19 refused inside a standby: detail the phase */
 
 /* Counter bytes for h713_cnt(), at the byte the ARM reads them from. */
 #define H713_CNT_SB_DROP     (H713_K_CNT0 + 0) /* port 3 words, partial frames dropped */

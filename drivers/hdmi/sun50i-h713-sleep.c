@@ -15,6 +15,8 @@
  *   RESUMING  CPU0 released, or 0x11 without a sleep: the budget again
  *   RELEASED  NET_CONFIRM with the cycle came: the net off
  *   RESET     inside h713_fail()
+ *   POWEROFF  0x19 taken (H713_POWER_OFF): rails off, the wake resets; a
+ *             restart here resets
  * A cpu op req without a request (a v4 TF-A and kernel) sleeps as before,
  * without net or budget, and goes straight to RELEASED after the wake.
  * The net is fed at step boundaries (record_step) and at most once a
@@ -226,7 +228,12 @@ h713_sleep_event(uint8_t ev)
 		set_phase(st, H713_PH_CPU_OP);
 		break;
 	case H713_EV_SUSPEND:
-		set_phase(st, H713_PH_SLEEP);
+		/* a power off keeps its own phase down to the reset */
+		if (ph != H713_PH_POWEROFF)
+			set_phase(st, H713_PH_SLEEP);
+		break;
+	case H713_EV_POWER_OFF:
+		set_phase(st, H713_PH_POWEROFF);
 		break;
 	case H713_EV_RESUMED:
 		h713_cnt(H713_CNT_WOKEN);
@@ -308,7 +315,8 @@ h713_restart_check(uint32_t exception)
 	 * there would run the boot initialisation under it; asleep, the state
 	 * machine would wait for a wake with the system half down. Both reset.
 	 */
-	if (ph == H713_PH_CPU_OP || ph == H713_PH_SLEEP || ph == H713_PH_RESET)
+	if (ph == H713_PH_CPU_OP || ph == H713_PH_SLEEP ||
+	    ph == H713_PH_RESET || ph == H713_PH_POWEROFF)
 		h713_fail(H713_CAUSE_RESTART, ph, exc);
 	if (ph != H713_PH_PRESLEEP && ph != H713_PH_RESUMING)
 		return;

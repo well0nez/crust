@@ -15,6 +15,7 @@ enum {
 	H713_EV_RESTORE,        /* 0x11 */
 	H713_EV_SUSPEND,        /* the system state machine suspends */
 	H713_EV_RESUMED,        /* CPU0 released */
+	H713_EV_POWER_OFF,      /* 0x19 taken, the system shuts down */
 };
 
 #if CONFIG(H713_SLEEP_NET)
@@ -35,6 +36,10 @@ void h713_suspend_prepare(void);
 uint32_t h713_wake_poll(void);
 /** Resume: release the wake sources, LEDs. */
 void h713_resume_done(void);
+/** Power off: the board's rail enable low (false) or high again (true). */
+void h713_power_off_rails(bool on);
+/** The reset out of a power off: RTC GP5 "GATE" becomes "RUN1". */
+void h713_power_off_reset(void);
 /** Not fatal: set error bit @bit (platform/memory.h) with detail and data. */
 void h713_err(uint8_t bit, uint8_t detail, uint32_t data);
 /** Count one event in the counter byte at @at (H713_CNT_*), wrapping. */
@@ -65,6 +70,8 @@ static inline void h713_poll(void) {}
 static inline void h713_suspend_prepare(void) {}
 static inline uint32_t h713_wake_poll(void) { return 0; }
 static inline void h713_resume_done(void) {}
+static inline void h713_power_off_rails(bool on UNUSED) {}
+static inline void h713_power_off_reset(void) {}
 static inline void h713_err(uint8_t bit UNUSED, uint8_t detail UNUSED,
                             uint32_t data UNUSED) {}
 static inline void h713_cnt(uintptr_t at UNUSED) {}

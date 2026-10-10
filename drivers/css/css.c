@@ -114,6 +114,25 @@ css_set_power_state(uint32_t cluster, uint32_t core, uint32_t core_state,
 	return SCPI_OK;
 }
 
+void
+css_power_off(void)
+{
+	/*
+	 * The H713's css_suspend_css() holds every core of the cluster in
+	 * reset (blob 0x4b28), the ones still looping included. A power off
+	 * ends in a SoC reset, so the per-core bookkeeping is only kept
+	 * consistent, not used again.
+	 */
+	record_step(STEP_SUSPEND_CSS);
+	css_suspend_css(SCPI_CSS_OFF);
+	for (uint32_t i = 0; i < css_get_cluster_count(); ++i) {
+		for (uint32_t j = 0; j < css_get_core_count(i); ++j)
+			power_state.core[i][j] = SCPI_CSS_OFF;
+		power_state.cluster[i] = SCPI_CSS_OFF;
+	}
+	power_state.css = SCPI_CSS_OFF;
+}
+
 static void
 css_wake_one_cpu(uint32_t cluster, uint32_t core)
 {

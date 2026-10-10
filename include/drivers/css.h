@@ -55,6 +55,13 @@ int css_set_power_state(uint32_t cluster, uint32_t core, uint32_t core_state,
                         uint32_t cluster_state, uint32_t css_state);
 
 /**
+ * Take the whole CSS down for a power off, whatever the core states say: at
+ * a power off Linux parks CPU1..3 in a loop instead of turning them off
+ * through PSCI. No system suspend follows; the caller shuts down.
+ */
+void css_power_off(void);
+
+/**
  * Resume execution on the most recently active core in the CSS.
  */
 void css_resume(void);

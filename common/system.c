@@ -234,6 +234,10 @@ system_state_machine(uint32_t exception)
 					regulator_disable(&vdd_sys_supply);
 			}
 
+			/* H713: no PMIC, no regulator devices - the board's
+			 * one rail enable, after the DRAM's self-refresh. */
+			if (system_state == SS_SHUTDOWN)
+				h713_power_off_rails(false);
 			/*
 			 * The regulator provider is often part of the same
 			 * device as the PMIC. Reduce churn by doing both PMIC
@@ -275,6 +279,10 @@ system_state_machine(uint32_t exception)
 				regulator_enable(&cpu_supply);
 			}
 			device_put(pmic);
+
+			/* H713: the rail enable back, and its 10 ms. */
+			if (system_state == SS_PRE_RESET)
+				h713_power_off_rails(true);
 
 			/* Give regulator outputs time to rise (the H713 has
 			 * none: no PMIC, every supply NULL). */
@@ -341,6 +349,8 @@ system_state_machine(uint32_t exception)
 			/* Continue through to resetting the SoC. */
 			fallthrough;
 		case SS_RESET:
+			/* H713: out of a power off, U-Boot boots through. */
+			h713_power_off_reset();
 			/* Attempt to reset the SoC using the watchdog. */
 			if (watchdog)
 				watchdog_reset_system(watchdog);

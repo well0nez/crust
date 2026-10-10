@@ -132,6 +132,33 @@ config H713_DEEP_AVCC_GATING
 		TF-A and the kernel refuse such an image unless told
 		otherwise. Never for a release.
 
+config H713_POWER_OFF
+	bool "Power off through crust: the board rails off, the key wakes with a reset"
+	depends on H713_HDMI
+	help
+		The vendor's "fake poweroff" (blob 0xeaa8, doku/187): on
+		TF-A's SYSTEM_OFF request (port 3, type 0x19) the cluster
+		goes down and the system state machine shuts down instead of
+		suspending. On the way down the lamp/fan enable PB5 and the
+		USB VBUS enable PL3 go low, as U-Boot's power gate leaves
+		them, then the board's rail enable (stock standby_param:
+		vdd-cpu, vdd-sys, vcc-pll and vcc-dram all on one pin) goes
+		low. The power key or the remote wakes: the rail enable high,
+		10 ms, RTC GP5 from "GATE" to "RUN1" and the R_WDOG reset, a
+		warm start that U-Boot's gate boots through. BUILD2 bit 24
+		tells TF-A it may ask.
+
+config H713_POWER_OFF_RAILS_PIN
+	int "Port L pin of the board's rail enable"
+	depends on H713_POWER_OFF
+	default 6
+	range 0 31
+	help
+		PL6 on the HY310 and the HY200 QZ713DF A1 (both stock trees,
+		standby_param). High runs the board; low cuts vdd-cpu,
+		vdd-sys, vcc-pll and vcc-dram. The R domain (crust, R_PIO,
+		the RTC) stays powered - the blob keeps running after it.
+
 config H713_SLEEP_NET
 	bool "Sleep net: the R_WDOG armed from the standby request to Linux's confirm"
 	depends on DEBUG_RECORD_STEPS && WATCHDOG_SUN50I_H713_WDT
@@ -165,6 +192,16 @@ if H713_TEST
 config H713_TEST_STARVE_NET
 	bool "Stop feeding the sleep net 2 s into the sleep (stage N2)"
 	depends on H713_SLEEP_NET
+
+config H713_POWER_OFF_TEST_WAKE_S
+	int "Power off: wake by itself after this many seconds (0 = never)"
+	depends on H713_POWER_OFF
+	default 0
+	range 0 3600
+	help
+		For the device test of the power off: the box comes back by
+		itself, which proves crust ran on through the rails off
+		without anybody at the key. Uses the standby timer word.
 
 config H713_TEST_PORT3_SILENT
 	bool "Stop reading port 3 once a request is taken (stage N4)"
