@@ -253,7 +253,7 @@ static const struct gpio_handle led_blue = PL(LED_PIN(LED_BLUE), MODE_OUTPUT, PU
 
 #if CONFIG(H713_POWER_OFF)
 /*
- * Power off (doku/187, the vendor's 0xeaa8). PB5 (lamp and fan) and PL3
+ * Power off (doku/187, doku/188; the vendor's 0xeaa8). PB5 (lamp and fan) and PL3
  * (USB VBUS) are the two lines U-Boot's power gate keeps low; Linux may have
  * left them high, and nothing resets the SoC before the rails go: they go
  * low first. The rail enable runs the board high (stock standby_param).
@@ -868,10 +868,12 @@ power_off_request(void)
 	info("H713: power off req");
 	/*
 	 * systemd keeps the SoC watchdog running through a power off
-	 * (RebootWatchdogSec, 16 s in the image's 10-h713-watchdog.conf): left
-	 * alone it reset the HY300PRO-G-EU into the gate some seconds after
-	 * crust took over (run geu1b, GP5 still GATE). Stopped here, with
-	 * error detail 0x80 should it stay armed.
+	 * (RebootWatchdogSec, 16 s in the image's 10-h713-watchdog.conf) and
+	 * nothing feeds it any more. The rails' fall takes it down with VDD_SYS
+	 * anyway; stopped here so that a power off never depends on that, with
+	 * error detail 0x80 should it stay armed. It was suspected of the
+	 * resets into the gate of the first runs and was not their cause
+	 * (doku/188).
 	 */
 	{
 		uint32_t mode = h713_wdog_stop(DEV_WDOG);
@@ -1393,9 +1395,9 @@ h713_power_off_rails(bool on)
 		/*
 		 * The blob's 0xdea8 before its PL6 low: VDD_SYS held in reset,
 		 * AVCC and bit 8 gated off the R domain. Without it the SoC
-		 * reset itself about 5 ms after the rails fell (run geu3: the
-		 * phase counted 52 ms to the fall and 57 ms in all, GP5 still
-		 * GATE, 2.1 W in U-Boot's gate afterwards).
+		 * reset itself about 5 ms after the rails fell and came up in
+		 * U-Boot's gate (doku/188: the phase counted 52 ms to the fall
+		 * and 57 ms in all, GP5 still GATE, 2.1 W at the socket).
 		 */
 		mmio_clr_32(VDD_SYS_RESET_REG, VDD_SYS_RESET);
 		mmio_set_32(VDD_SYS_PWROFF_GATING_REG, AVCC_GATING);
