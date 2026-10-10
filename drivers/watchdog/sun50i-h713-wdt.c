@@ -78,6 +78,23 @@ h713_rwdog_disarm(void)
 	return mmio_read_32(DEV_R_WDOG + WDOG_MODE_REG);
 }
 
+/* Either watchdog: feed, then off, three tries; returns MODE as read back. */
+uint32_t
+h713_wdog_stop(uintptr_t base)
+{
+	uint32_t mode = 0;
+
+	for (uint8_t i = 0; i < 3; ++i) {
+		mmio_write_32(base + WDOG_CTRL_REG, WDOG_FEED);
+		mmio_write_32(base + WDOG_MODE_REG, WDOG_KEY);
+		mode = mmio_read_32(base + WDOG_MODE_REG);
+		if (!(mode & 1))
+			break;
+		udelay(1000);
+	}
+	return mode;
+}
+
 /* As found: STA << 16 | MODE. */
 uint32_t
 h713_rwdog_state(void)

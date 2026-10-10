@@ -101,6 +101,7 @@ void h713_wdog_reset(uintptr_t base);
 uint32_t h713_rwdog_arm(uint8_t code);
 void h713_rwdog_feed(void);
 uint32_t h713_rwdog_disarm(void);
+uint32_t h713_wdog_stop(uintptr_t base);
 uint32_t h713_rwdog_state(void);
 
 /* drivers/css/sun50i-h713-css.c: the warm entry from "cpu op req". */

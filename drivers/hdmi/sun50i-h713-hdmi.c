@@ -866,6 +866,19 @@ power_off_request(void)
 	}
 	h713_sleep_event(H713_EV_POWER_OFF);
 	info("H713: power off req");
+	/*
+	 * systemd keeps the SoC watchdog running through a power off
+	 * (RebootWatchdogSec, 16 s in the image's 10-h713-watchdog.conf): left
+	 * alone it reset the HY300PRO-G-EU into the gate some seconds after
+	 * crust took over (run geu1b, GP5 still GATE). Stopped here, with
+	 * error detail 0x80 should it stay armed.
+	 */
+	{
+		uint32_t mode = h713_wdog_stop(DEV_WDOG);
+
+		if (mode & 1)
+			h713_err(H713_ERR_POWER_OFF, 0x80, mode);
+	}
 	if (gpio_get(&off_pb5) == SUCCESS)
 		gpio_set_value(&off_pb5, false);
 	if (gpio_get(&off_pl3) == SUCCESS)
