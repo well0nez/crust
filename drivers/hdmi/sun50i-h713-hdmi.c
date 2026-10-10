@@ -1389,9 +1389,27 @@ h713_power_off_rails(bool on)
 		mmio_write_32(H713_K_ERR_DATA, mmio_read_32(H713_K_NET_MS));
 	}
 #endif
+	if (!on) {
+		/*
+		 * The blob's 0xdea8 before its PL6 low: VDD_SYS held in reset,
+		 * AVCC and bit 8 gated off the R domain. Without it the SoC
+		 * reset itself about 5 ms after the rails fell (run geu3: the
+		 * phase counted 52 ms to the fall and 57 ms in all, GP5 still
+		 * GATE, 2.1 W in U-Boot's gate afterwards).
+		 */
+		mmio_clr_32(VDD_SYS_RESET_REG, VDD_SYS_RESET);
+		mmio_set_32(VDD_SYS_PWROFF_GATING_REG, AVCC_GATING);
+		mmio_set_32(VDD_SYS_PWROFF_GATING_REG, UNK_GATING_BIT_08);
+	}
 	gpio_set_value(&off_rails, on);
-	if (on)
+	if (on) {
 		udelay(RAILS_UP_US);
+		/* back as h713_fail() leaves it for the reset: VDD_SYS out of
+		 * reset and ungated, the DRAM pad hold off */
+		mmio_set_32(VDD_SYS_RESET_REG, VDD_SYS_RESET);
+		mmio_clr_32(VDD_SYS_PWROFF_GATING_REG,
+		            AVCC_GATING | UNK_GATING_BIT_08 | 0x3);
+	}
 #else
 	(void)on;
 #endif
