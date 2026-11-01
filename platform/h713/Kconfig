@@ -57,7 +57,7 @@ config H713_RAILS_PIN
 		it records the board fact, and crust never touches the pin.
 
 config H713_BOARD_ID
-	int "Board in the build word (BUILD2 15..12): 1 HY310, 2 HY300 Pro, 3 HY200 QZ713DF A1"
+	int "Board in the build word (BUILD2 15..12): 1 HY310, 2 HY300 Pro, 3 HY200 QZ713DF A1, 4 HY320"
 	default 0
 	range 0 15
 	help
